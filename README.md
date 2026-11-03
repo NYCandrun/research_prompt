@@ -67,12 +67,15 @@ Every packet is an immutable work assignment with exact inputs, output paths,
 prompts, schemas, dependencies, and validators. For each returned packet:
 
 ```bash
-python3 -m research_control work claim TASK_ID --worker-id STABLE_WORKER_ID
 python3 -m research_control work start TASK_ID --worker-id STABLE_WORKER_ID
 # perform only the packet
 python3 -m research_control work succeed TASK_ID --worker-id STABLE_WORKER_ID \
   --model MODEL --effort EFFORT
 ```
+
+`work start` claims the task when nobody holds it (`work claim` alone reserves
+it without starting). `work succeed` runs the checks and refuses with the list
+when one fails; `work check` shows the same list without completing.
 
 Model routing is advisory and optional. Each packet names an economy, standard,
 strong, or frontier reasoning tier; frontier is reserved for the hardest
@@ -356,7 +359,9 @@ every worker brief.
   were cut at fixed sizes keep that cutting.
 - Extraction batches carry the model tier their sources need
   (`extraction_tiers` in `WORKFLOW.yaml`): code, specs, and data on
-  `standard`; recordings, pages, and business records on `strong`.
+  `standard`; pages on `standard` too (one value in `WORKFLOW.yaml`,
+  `extraction_tiers.page`, raises them again if a run's filing spot check
+  shows recall dropping); recordings and business records on `strong`.
 - A question added mid-run re-reads the relevant sources only where they share
   terms with it, and only for it (`focus_questions` on the input). For a rule
   change that affects one kind of source, `supplement --kind repository
@@ -772,11 +777,11 @@ playbook.
 
 ## Research and release contract
 
-Read these in order when starting a run:
-
-1. `RESEARCH_CONSTITUTION.md` — evidence and research principles.
-2. `WORKFLOW.yaml` — adaptive runtime settings, phase order, and gates.
-3. Only the task packet and files named by that packet while doing worker work.
+Read when starting a run, as the orchestrator: the adapter for your host
+(`CLAUDE.md` or `AGENTS.md`) and the sections of this file named there. Do not
+load `RESEARCH_CONSTITUTION.md` or `WORKFLOW.yaml`: the constitution reaches
+each worker inside its brief, the scheduler reads the workflow, and neither
+is orchestrator guidance. A worker reads only its brief and the files it names.
 
 The controlled phases remain:
 

@@ -92,7 +92,7 @@
         "repository": "standard",
         "business_records": "strong",
         "recording": "strong",
-        "page": "strong"
+        "page": "standard"
       },
       "tiers": {
         "economy": {
@@ -462,48 +462,214 @@
     "publication_checks": {
       "tasks": [
         {
+          "id": "citation-tables",
+          "task_type": "citation_tables",
+          "track_input_staleness": true,
+          "prompt": "prompts/core/runtime.md",
+          "inputs": [
+            {
+              "id": "citation_maps",
+              "path": "tools/outputs/citation-map-*.json",
+              "required": true
+            },
+            {
+              "id": "fact_store",
+              "path": "02-facts/*.md",
+              "required": true
+            }
+          ],
+          "outputs": [
+            "tools/outputs/citation-review-a.md",
+            "tools/outputs/citation-review-b.md"
+          ],
+          "independent": false,
+          "exclusive_inputs": false,
+          "metadata": {
+            "planner": "static-profile",
+            "single_writer": true,
+            "executor": "runtime"
+          }
+        },
+        {
           "id": "language",
           "task_type": "language_review",
           "prompt": "prompts/phases/language-review.md",
-          "cores": ["prompts/core/runtime.md", "prompts/core/writing.md"],
-          "outputs": ["06-checks/american-english.md", "tools/outputs/publication-findings-language.jsonl"],
+          "cores": [
+            "prompts/core/runtime.md",
+            "prompts/core/writing.md"
+          ],
+          "outputs": [
+            "06-checks/american-english.md",
+            "tools/outputs/publication-findings-language.jsonl"
+          ],
           "independent": true,
           "exclusive_inputs": false,
-          "track_input_staleness": true
+          "track_input_staleness": true,
+          "inputs": [
+            {
+              "id": "predesign_reference",
+              "kind": "git_commit_or_checksum",
+              "required": true
+            },
+            {
+              "id": "brief_artifacts",
+              "path": "07-final-report/company-brief.{pdf,html}",
+              "required": true
+            },
+            {
+              "id": "diagram_artifacts",
+              "path": "07-final-report/{diagram-models.md,diagram-style-spec.md,diagram-captions.md,01-product-capability-map.svg,02-operating-model.svg,03-enterprise-logical-architecture.svg,04-technical-dependency-map.svg}",
+              "required": true
+            },
+            {
+              "id": "brief_markdown",
+              "path": "05-synthesis/company-brief.md",
+              "required": true
+            },
+            {
+              "id": "findings",
+              "path": "05-synthesis/findings.md",
+              "required": false
+            }
+          ]
         },
         {
           "id": "citation-a",
           "task_type": "citation_claim_review",
           "prompt": "prompts/phases/citation-review.md",
-          "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
-          "outputs": ["06-checks/citation-claims-a.md", "tools/outputs/citation-check-a.md", "tools/outputs/publication-findings-citation-a.jsonl"],
+          "cores": [
+            "prompts/core/runtime.md",
+            "prompts/core/evidence.md"
+          ],
+          "outputs": [
+            "06-checks/citation-claims-a.md",
+            "tools/outputs/citation-check-a.md",
+            "tools/outputs/publication-findings-citation-a.jsonl"
+          ],
           "independent": true,
           "exclusive_inputs": false,
-          "track_input_staleness": true
+          "track_input_staleness": true,
+          "depends_on": [
+            "citation-tables"
+          ],
+          "inputs": [
+            {
+              "id": "predesign_reference",
+              "kind": "git_commit_or_checksum",
+              "required": true
+            },
+            {
+              "id": "brief_artifacts",
+              "path": "07-final-report/company-brief.{pdf,html}",
+              "required": true
+            },
+            {
+              "id": "diagram_artifacts",
+              "path": "07-final-report/{diagram-models.md,diagram-style-spec.md,diagram-captions.md,01-product-capability-map.svg,02-operating-model.svg,03-enterprise-logical-architecture.svg,04-technical-dependency-map.svg}",
+              "required": true
+            },
+            {
+              "id": "citation_review_table",
+              "path": "tools/outputs/citation-review-a.md",
+              "required": true
+            },
+            {
+              "id": "citation_maps",
+              "path": "tools/outputs/citation-map-*.json",
+              "required": true,
+              "inline": false
+            }
+          ]
         },
         {
           "id": "citation-b",
           "task_type": "citation_claim_review",
           "prompt": "prompts/phases/citation-review.md",
-          "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
-          "outputs": ["06-checks/citation-claims-b.md", "tools/outputs/citation-check-b.md", "tools/outputs/exhibit-citation-check.md", "tools/outputs/publication-findings-citation-b.jsonl"],
+          "cores": [
+            "prompts/core/runtime.md",
+            "prompts/core/evidence.md"
+          ],
+          "outputs": [
+            "06-checks/citation-claims-b.md",
+            "tools/outputs/citation-check-b.md",
+            "tools/outputs/exhibit-citation-check.md",
+            "tools/outputs/publication-findings-citation-b.jsonl"
+          ],
           "independent": true,
           "exclusive_inputs": false,
-          "track_input_staleness": true
+          "track_input_staleness": true,
+          "depends_on": [
+            "citation-tables"
+          ],
+          "inputs": [
+            {
+              "id": "predesign_reference",
+              "kind": "git_commit_or_checksum",
+              "required": true
+            },
+            {
+              "id": "brief_artifacts",
+              "path": "07-final-report/company-brief.{pdf,html}",
+              "required": true
+            },
+            {
+              "id": "diagram_artifacts",
+              "path": "07-final-report/{diagram-models.md,diagram-style-spec.md,diagram-captions.md,01-product-capability-map.svg,02-operating-model.svg,03-enterprise-logical-architecture.svg,04-technical-dependency-map.svg}",
+              "required": true
+            },
+            {
+              "id": "citation_review_table",
+              "path": "tools/outputs/citation-review-b.md",
+              "required": true
+            },
+            {
+              "id": "citation_maps",
+              "path": "tools/outputs/citation-map-*.json",
+              "required": true,
+              "inline": false
+            }
+          ]
         },
         {
           "id": "visual",
           "task_type": "visual_review",
           "prompt": "prompts/phases/visual-review.md",
-          "cores": ["prompts/core/runtime.md", "prompts/core/writing.md"],
-          "inputs": [
-            {"id": "brief_artifacts", "path": "07-final-report/company-brief.{pdf,html}", "required": true},
-            {"id": "brand_artifacts", "path": "07-final-report/brand-guide.{pdf,html}", "required": true},
-            {"id": "diagram_artifacts", "path": "07-final-report/{01-product-capability-map,02-operating-model,03-enterprise-logical-architecture,04-technical-dependency-map}.svg", "required": true},
-            {"id": "render_metadata", "path": "tools/outputs/render-metadata.json", "required": true},
-            {"id": "review_scope", "path": "tools/outputs/review-scope.json", "required": true}
+          "cores": [
+            "prompts/core/runtime.md",
+            "prompts/core/writing.md"
           ],
-          "outputs": ["06-checks/visual-review.md", "06-checks/visual-review.json", "tools/outputs/publication-findings-visual.jsonl"],
+          "inputs": [
+            {
+              "id": "brief_artifacts",
+              "path": "07-final-report/company-brief.{pdf,html}",
+              "required": true
+            },
+            {
+              "id": "brand_artifacts",
+              "path": "07-final-report/brand-guide.{pdf,html}",
+              "required": true
+            },
+            {
+              "id": "diagram_artifacts",
+              "path": "07-final-report/{01-product-capability-map,02-operating-model,03-enterprise-logical-architecture,04-technical-dependency-map}.svg",
+              "required": true
+            },
+            {
+              "id": "render_metadata",
+              "path": "tools/outputs/render-metadata.json",
+              "required": true
+            },
+            {
+              "id": "review_scope",
+              "path": "tools/outputs/review-scope.json",
+              "required": true
+            }
+          ],
+          "outputs": [
+            "06-checks/visual-review.md",
+            "06-checks/visual-review.json",
+            "tools/outputs/publication-findings-visual.jsonl"
+          ],
           "independent": true,
           "exclusive_inputs": false,
           "track_input_staleness": true
@@ -512,9 +678,40 @@
           "id": "apply-publication-fixes",
           "task_type": "publication_fixer",
           "prompt": "prompts/phases/publication-fixer.md",
-          "depends_on": ["language", "citation-a", "citation-b", "visual"],
-          "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"],
-          "outputs": ["05-synthesis/company-brief.md", "05-synthesis/design-notes.md", "05-synthesis/brand-guide/evidence/**", "tools/outputs/citation-map-company-brief.json", "tools/outputs/exhibit-map.json", "tools/outputs/diagram-models.json", "07-final-report/company-brief.pdf", "07-final-report/company-brief.html", "07-final-report/brand-guide.pdf", "07-final-report/brand-guide.html", "07-final-report/diagram-models.md", "07-final-report/diagram-style-spec.md", "07-final-report/01-product-capability-map.svg", "07-final-report/02-operating-model.svg", "07-final-report/03-enterprise-logical-architecture.svg", "07-final-report/04-technical-dependency-map.svg", "07-final-report/diagram-captions.md", "tools/outputs/render-metadata.json", "tools/outputs/review-scope.json", "06-checks/publication-decisions.md", "tools/outputs/publication-decisions.jsonl"],
+          "depends_on": [
+            "language",
+            "citation-a",
+            "citation-b",
+            "visual"
+          ],
+          "cores": [
+            "prompts/core/runtime.md",
+            "prompts/core/evidence.md",
+            "prompts/core/writing.md"
+          ],
+          "outputs": [
+            "05-synthesis/company-brief.md",
+            "05-synthesis/design-notes.md",
+            "05-synthesis/brand-guide/evidence/**",
+            "tools/outputs/citation-map-company-brief.json",
+            "tools/outputs/exhibit-map.json",
+            "tools/outputs/diagram-models.json",
+            "07-final-report/company-brief.pdf",
+            "07-final-report/company-brief.html",
+            "07-final-report/brand-guide.pdf",
+            "07-final-report/brand-guide.html",
+            "07-final-report/diagram-models.md",
+            "07-final-report/diagram-style-spec.md",
+            "07-final-report/01-product-capability-map.svg",
+            "07-final-report/02-operating-model.svg",
+            "07-final-report/03-enterprise-logical-architecture.svg",
+            "07-final-report/04-technical-dependency-map.svg",
+            "07-final-report/diagram-captions.md",
+            "tools/outputs/render-metadata.json",
+            "tools/outputs/review-scope.json",
+            "06-checks/publication-decisions.md",
+            "tools/outputs/publication-decisions.jsonl"
+          ],
           "independent": true,
           "exclusive_inputs": true,
           "output_mode": "revise"
@@ -523,9 +720,21 @@
           "id": "page-acceptance",
           "task_type": "orchestrator_page_review",
           "prompt": "prompts/phases/orchestrator-review.md",
-          "depends_on": ["language", "citation-a", "citation-b", "visual", "apply-publication-fixes"],
-          "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"],
-          "outputs": ["06-checks/final-report.md"],
+          "depends_on": [
+            "language",
+            "citation-a",
+            "citation-b",
+            "visual",
+            "apply-publication-fixes"
+          ],
+          "cores": [
+            "prompts/core/runtime.md",
+            "prompts/core/evidence.md",
+            "prompts/core/writing.md"
+          ],
+          "outputs": [
+            "06-checks/final-report.md"
+          ],
           "independent": false,
           "exclusive_inputs": true
         }

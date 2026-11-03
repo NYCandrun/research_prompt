@@ -5,7 +5,11 @@
 Write for the user in plain English. Leave out jargon and internal shorthand ("shard", "slice", "packet", "gate", "reconcile", "the X repo"): say what a thing is ("a batch of 48 facts to verify", "a chunk of a source's text", "the phase checks"), name a repository by its GitHub name (owner/repository, for example carlmueller-tribe/mori), and name a source by what it is (a podcast episode, a company blog post), not only by its ID. This holds for every message to the user, status updates included,
 and for anything a worker reports that you pass on.
 
-Follow `README.md` as the operational entry point. Start a company run with
+Follow `README.md` as the operational entry point: read this file and the
+README's sections Run it, Execute task packets, How many workers, and Talking
+to the user. Do not read `RESEARCH_CONSTITUTION.md` or `WORKFLOW.yaml`: the
+constitution reaches each worker inside its brief, and the scheduler reads the
+workflow. Start a company run with
 `python3 -m research_control new --url URL`, then work from inside its
 `runs/<slug>/` directory: rerun `python3 -m research_control run` and dispatch
 every ready packet until exact-artifact release passes.
@@ -27,8 +31,8 @@ every ready packet until exact-artifact release passes.
   small correction to a finished output is recorded with `work record-edit`.
   Discovery is one task per channel: the runtime handles `company_site` and
   `sitemaps`; each of the other twelve channels gets its own worker.
-- Workers act only under a held lease: claim and start before working, succeed
-  only after outputs exist. Never let a worker run discovery or capture
+- Workers act only under a held lease: `work start` claims and starts the
+  task; succeed only after outputs exist. Never let a worker run discovery or capture
   commands for a task it has not claimed. To add work to a closed channel,
   reopen it with `discovery reopen` and rerun `run` so the scheduler re-queues
   the task.
@@ -96,7 +100,7 @@ does for workers. Quotes, quoted titles, and names keep the source's spelling.
 
 Every packet names an advisory tier (`model_route` in its JSON and in the
 `run` output). Extraction batches carry their own tier by the kind of source
-they read: code, specs, and data on `standard`; recordings, pages, and business
+they read: code, specs, data, and pages on `standard`; recordings and business
 records on `strong`. Claude Code can
 select a model and effort per subagent, so apply the route on every dispatch:
 

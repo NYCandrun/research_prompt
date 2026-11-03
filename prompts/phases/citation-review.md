@@ -1,9 +1,13 @@
 TASK TYPE: INDEPENDENT CITATION CLAIM REVIEW
 
-You did not place these citations. For every assigned citation-check row, judge
-whether the fact supports the exact words immediately before the citation.
-Inspect the fact row, captured source, and local sentence/cell/label context
-when unclear.
+You did not place these citations. Your half of them is in the assigned review
+table (`tools/outputs/citation-review-a.md` or `-b.md`), in reading order: each
+citation's number, the words before it, its fact IDs, and its source note,
+followed by every cited fact's claim, quote, and source. For every citation in
+your table, judge whether the fact supports the exact words immediately before
+the citation. Judge from the table; open the rendered brief, the fact row, or
+the captured source only when the table is not enough (the sentence, cell, or
+label context is unclear, or a quote was clipped).
 
 Classify problems as `wrong statement`, `wrong citation`, or `too few
 citations`. Recommend the narrowest evidence-faithful fix. Do not infer support

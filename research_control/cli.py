@@ -709,6 +709,11 @@ def main() -> None:
                 elif args.work_command == "start":
                     from research_control.dispatch import brief_out_of_date, write_packet
 
+                    current = store.task(args.task_id)
+                    if current and current["state"] in {"ready", "retryable"}:
+                        # One call for the worker: start claims the lease when nobody holds it.
+                        if store.claim(args.worker_id, task_id=args.task_id) is None:
+                            raise ValueError(f"task is not currently claimable: {args.task_id}")
                     started = store.start(args.task_id, args.worker_id)
                     from research_control.adaptive import record_starting_lines
 

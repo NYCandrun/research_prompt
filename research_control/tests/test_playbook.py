@@ -49,7 +49,7 @@ class PlaybookTests(unittest.TestCase):
         self.assertEqual(section_keys(alternates), ["mandate", "off-limits", "workaround-log", "general", "archives", "pdf"])
         capture = task("capture", inputs=[{"id": "S1", "url": "https://x.example/deck.pdf", "channel": "newsroom_blog"}])
         self.assertEqual(section_keys(capture)[-3:], ["newsroom_blog", "archives", "pdf"])
-        self.assertEqual(section_keys(task("extraction")), ["mandate", "off-limits", "workaround-log", "pdf", "tooling"])
+        self.assertEqual(section_keys(task("extraction")), [])
         self.assertEqual(section_keys(task("technical_review")), [])
         self.assertIn("company_site", section_keys(task("brand_guide")))
 

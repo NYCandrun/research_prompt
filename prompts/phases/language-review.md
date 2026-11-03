@@ -1,7 +1,9 @@
 TASK TYPE: INDEPENDENT AMERICAN-ENGLISH REVIEW
 
 Review the company-brief Markdown, diagram captions, and rendered reader-facing
-text. Check spelling,
+text. The Markdown, the captions, and the findings plan are in this brief; open
+the rendered HTML (`07-final-report/company-brief.html`) only for reader-facing
+text the Markdown does not show, such as source notes and exhibit labels. Check spelling,
 punctuation, quote style, terminology, directness, and every rule in the
 writing core, including tight copy: flag filler, tangents, points repeated
 across parts, paragraphs that list facts without a point, caveats repeated in

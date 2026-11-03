@@ -10,7 +10,7 @@ from typing import Any
 
 from research_control.hashing import hash_path
 from research_control.io import atomic_write_json, atomic_write_text, load_json, utc_now
-from research_control.playbook import playbook_for_task
+from research_control.playbook import playbook_for_task, task_channels
 from research_control.runtime import RuntimeStore
 from research_control.routing import model_route
 
@@ -21,17 +21,20 @@ PACKET_DIRECTORY = "tools/outputs/task-packets"
 ONLY_FOR = re.compile(r"^<!-- only: (.+?) -->[ \t]*\n?", re.M)
 
 
-def _prompt(root: Path, relative: str, task_type: str | None = None) -> str:
+def _prompt(root: Path, relative: str, task_type: str | None = None, channels: list[str] | None = None) -> str:
     """A prompt file's text for one kind of task: a section marked `<!-- only: ... -->`
-    is kept only for the task types it names, so each task carries the rules it uses."""
+    is kept only for the task types or discovery channels it names, so each task
+    carries the rules it uses."""
     path = root / relative
     if not path.is_file():
         raise FileNotFoundError(f"task prompt missing: {relative}")
     text = path.read_text(encoding="utf-8").strip()
+    allowed = {task_type} if task_type is not None else set()
+    allowed |= {str(item) for item in (channels or [])}
     kept = []
     for section in re.split(r"(?m)^(?=## )", text):
         marker = ONLY_FOR.search(section)
-        if marker and task_type is not None and task_type not in {item.strip() for item in marker.group(1).split(",")}:
+        if marker and task_type is not None and not allowed & {item.strip() for item in marker.group(1).split(",")}:
             continue
         kept.append(ONLY_FOR.sub("", section))
     return "".join(kept).strip()
@@ -110,17 +113,16 @@ def write_packet(root: Path, task: dict[str, Any]) -> dict[str, Any]:
         "",
     ])
     for relative in task["prompt_files"]:
-        lines.extend([f"### `{relative}`", "", _prompt(root, relative, task["task_type"]), ""])
+        lines.extend([f"### `{relative}`", "", _prompt(root, relative, task["task_type"], task_channels(task)), ""])
     if playbook_block:
         lines.extend([playbook_block])
     lines.extend([
         "## Lifecycle protocol",
         "",
-        f"1. Claim: `python3 -m research_control work claim {task['task_id']} --worker-id WORKER_ID`",
-        f"2. Start: `python3 -m research_control work start {task['task_id']} --worker-id WORKER_ID`",
-        f"3. Heartbeat during long work: `python3 -m research_control work heartbeat {task['task_id']} --worker-id WORKER_ID`",
-        f"4. Succeed only after outputs exist: `python3 -m research_control work succeed {task['task_id']} --worker-id WORKER_ID --model MODEL_ID --effort EFFORT` (the model and effort that actually ran)",
-        f"5. On failure: `python3 -m research_control work fail {task['task_id']} --worker-id WORKER_ID --reason REASON`",
+        f"1. Start (it claims the task first when it is unclaimed): `python3 -m research_control work start {task['task_id']} --worker-id WORKER_ID`",
+        f"2. Heartbeat during long work: `python3 -m research_control work heartbeat {task['task_id']} --worker-id WORKER_ID`",
+        f"3. Succeed only after outputs exist; it runs the checks and refuses with the list when one fails: `python3 -m research_control work succeed {task['task_id']} --worker-id WORKER_ID --model MODEL_ID --effort EFFORT` (the model and effort that actually ran)",
+        f"4. On failure: `python3 -m research_control work fail {task['task_id']} --worker-id WORKER_ID --reason REASON`",
         "",
         "Do not edit scheduler state, canonical shared files not named above, or another worker's part.",
         "Do not claim phase completion. Return only a concise task result to the orchestrator.",
@@ -174,7 +176,8 @@ def task_material(root: Path, task: dict[str, Any]) -> tuple[str, list[str], dic
         pattern = str(item.get("path", "")) if isinstance(item, dict) else ""
         if not pattern:
             continue
-        if pattern.startswith(NOT_INLINED):
+        if pattern.startswith(NOT_INLINED) or (isinstance(item, dict) and item.get("inline") is False):
+            # Stores, final artifacts, and inputs marked `inline: false` are listed for the worker to open, not copied.
             left.append(pattern)
             continue
         is_pattern = any(mark in pattern for mark in "*{?")
@@ -223,9 +226,8 @@ def worker_brief(root: Path, task: dict[str, Any], route: dict[str, Any], packet
         "",
         "## Start",
         "",
-        f"1. `python3 -m research_control work claim {task_id} --worker-id {worker}` then "
-        f"`python3 -m research_control work start {task_id} --worker-id {worker}` "
-        "(if refused for concurrency, wait a minute and retry). If `work start` says this file was rewritten because "
+        f"1. `python3 -m research_control work start {task_id} --worker-id {worker}` (it claims the task first; "
+        "if refused for concurrency, wait a minute and retry). If it says this file was rewritten because "
         "its inputs changed, read it again from the top.",
         "2. Read this whole file before starting work, in as few reads as you can (Read with allow_large, or a few "
         "large ranges). It holds, in order: the files this task reads (each under `=== FILE: path ===`), then the "
@@ -250,11 +252,11 @@ def worker_brief(root: Path, task: dict[str, Any], route: dict[str, Any], packet
         "examples: \"program\", not \"programme\"; \"job posting\", not \"job advert\"). Quotes, quoted titles, and "
         "names keep the source's spelling.",
         "",
-        f"4. Check with `python3 -m research_control work check {task_id}` and fix what it reports until its status is clean. "
+        f"4. `python3 -m research_control work succeed {task_id} --worker-id {worker} --model <the model ID you run as> "
+        f"--effort {route['effort']}`. It runs the checks and refuses with the list when one fails: fix what it names "
+        f"and run it again (`python3 -m research_control work check {task_id}` shows the same list without completing). "
         "If a check flags text you believe is correct as the source has it (a false positive), do not reword it: "
         "say so in your report.",
-        f"5. `python3 -m research_control work succeed {task_id} --worker-id {worker} --model <the model ID you run as> "
-        f"--effort {route['effort']}`.",
         "",
         "Write only the outputs the instructions name and your scratchpad directory. Do not run `research_control run` "
         "or edit scheduler state. Report in under 80 words: status, counts, output paths, and anything the orchestrator "

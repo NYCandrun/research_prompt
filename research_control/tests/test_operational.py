@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from research_control import PASS
 from research_control.checks import check_phase
+from research_control.citation_tables import build_review_tables
 from research_control.capture import capture_url
 from research_control.cli import _refresh_release_evidence
 from research_control.diagram_contract import DIAGRAM_CAPTIONS, DIAGRAM_MODEL_JSON, DIAGRAM_MODEL_MARKDOWN, DIAGRAM_SPECS, DIAGRAM_STYLE_MARKDOWN
@@ -42,6 +43,17 @@ def text(root: Path, relative: str, value: str = "complete\n") -> None:
 
 def jsonl(root: Path, relative: str, rows: list[dict]) -> None:
     atomic_write_jsonl(root / relative, rows)
+
+
+def refresh_runtime_step_for(root: Path):
+    """Complete a runtime-owned step, or leave it when its inputs are unchanged and it already succeeded."""
+    def refresh(task_id: str, writer) -> None:
+        try:
+            complete_task(root, task_id, "runtime-executor", writer)
+        except ValueError as error:
+            if "already succeeded" not in str(error):
+                raise
+    return refresh
 
 
 def complete_task(root: Path, task_id: str, worker_id: str, writer) -> None:
@@ -201,6 +213,7 @@ class OperationalRunTests(unittest.TestCase):
     def test_clean_room_url_to_release_control_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepared(directory)
+            refresh_runtime_step = refresh_runtime_step_for(root)
             report, _ = check_phase(root, "bootstrap")
             self.assertEqual(PASS, report["status"])
 
@@ -424,6 +437,7 @@ class OperationalRunTests(unittest.TestCase):
                     }]),
                 ),
             )
+            refresh_runtime_step("publication_checks.citation-tables", lambda: build_review_tables(root))
             complete_task(
                 root,
                 "publication_checks.citation-a",
@@ -518,6 +532,7 @@ class OperationalRunTests(unittest.TestCase):
                     }]),
                 ),
             )
+            refresh_runtime_step("publication_checks.citation-tables", lambda: build_review_tables(root))
             complete_task(
                 root,
                 "publication_checks.citation-a",

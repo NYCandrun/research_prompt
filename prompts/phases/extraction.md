@@ -161,3 +161,8 @@ search earlier facts or candidates: duplicates are removed after extraction.
 Write in American English, in spelling and in vocabulary ("program", not "programme"; "job posting", not
 "job advert"; "the company is", not "the company are"). Quotes, quoted titles, and names keep the
 source's spelling. `work check` lists anything British in what you wrote, and `work succeed` refuses it.
+
+When a source will not open, convert, or decode, get its text as best you can
+with the tools at hand (another parser, OCR, a different library), up to five
+approaches, and log what worked with `workaround add --channel pdf` or
+`--channel tooling`.

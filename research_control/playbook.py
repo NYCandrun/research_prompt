@@ -31,7 +31,6 @@ TASK_KEYS = {
     "brand_guide": [*GENERAL, EVERY_CHANNEL, "company_site"],
     "scope": [*GENERAL],
     "capture": [*GENERAL, EVERY_CHANNEL],
-    "extraction": [*GENERAL, "pdf", "tooling"],
 }
 
 

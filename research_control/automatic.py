@@ -109,6 +109,12 @@ def _capture(root: Path, store: RuntimeStore, task: dict[str, Any]) -> dict[str,
     return receipt
 
 
+def _citation_tables(root: Path) -> dict[str, Any]:
+    from research_control.citation_tables import build_review_tables
+
+    return build_review_tables(root)
+
+
 def _competitor_matrix(root: Path) -> dict[str, Any]:
     from research_control.competitor_matrix import build_matrix
     from research_control.orchestration import load_state
@@ -132,6 +138,7 @@ HANDLERS: dict[str, Callable[[Path, RuntimeStore, dict[str, Any]], Any]] = {
         "digests": write_claim_digests(root, CLAIM_DIGESTS), "competitor_matrix": _competitor_matrix(root),
     },
     "consistency_check": lambda root, _store, _task: write_relationship_report(root),
+    "citation_tables": lambda root, _store, _task: _citation_tables(root),
     "report_outline": lambda root, _store, _task: write_report_outline(root),
     "extraction_reducer": lambda root, store, _task: reduce_extraction_parts(root, [
         task for task in store.tasks(phase="facts", states={"succeeded"}) if task["task_type"] == "extraction"

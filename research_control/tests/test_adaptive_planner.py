@@ -754,7 +754,7 @@ class WorkerBriefTests(unittest.TestCase):
             atomic_write_text(root / "tools/extracts/slices/SRC-1.part-0001.txt", "We build agents and tools.\n")
             self.assertEqual(["tools/extracts/slices/SRC-1.part-0001.txt"], brief_out_of_date(root, "facts.extract.abc"))
             self.assertEqual("standard", entry["model_route"]["tier"])
-            self.assertIn("work claim facts.extract.abc --worker-id w-abc", brief)
+            self.assertIn("work start facts.extract.abc --worker-id w-abc", brief)
             self.assertIn("work check facts.extract.abc", brief)
             self.assertIn("Treat X as internal tooling.", brief)
             self.assertIn("--effort medium", brief)

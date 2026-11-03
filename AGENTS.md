@@ -1,6 +1,9 @@
 # Codex execution adapter
 
-Follow `README.md` as the operational entry point. Start a company run with
+Follow `README.md` as the operational entry point: read this file and the
+README's sections Run it and Execute task packets. Do not read
+`RESEARCH_CONSTITUTION.md` or `WORKFLOW.yaml`: the constitution reaches each
+worker inside its brief, and the scheduler reads the workflow. Start a company run with
 `python3 -m research_control new --url URL`, then work from inside its
 `runs/<slug>/` directory: run `python3 -m research_control run`, dispatch every
 ready packet, and repeat until exact-artifact release acceptance passes. Use

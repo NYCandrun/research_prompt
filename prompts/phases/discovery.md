@@ -18,6 +18,9 @@ Treat public sources as intentionally public: a public repository, page, or
 file may be used for what it says about a firm. Record organizations,
 repositories, and roles, never personal details.
 
+## Public archives
+<!-- only: code_packages, market_competitors, archives -->
+
 Public archives keep what GitHub and the web no longer serve. Use them for the
 company and for direct competitors alike:
 
@@ -44,6 +47,9 @@ company and for direct competitors alike:
   and the runtime reads its file list and its Markdown and CSV files at the
   last archived commit, within the archive's request limit.
 - The Wayback Machine, for pages, when the network allows it.
+
+## Finding GitHub organizations
+<!-- only: code_packages, market_competitors -->
 
 Finding GitHub organizations, for the company and for competitors: never
 guess one exact name. A firm's organization is often named differently from
@@ -80,11 +86,15 @@ Confirm an organization or account belongs to the firm from its profile
 alone: look-alike names are common (`fraction-ai` and `odeai` are other
 companies, not Fractional AI).
 
+## The headless browser
+
 The headless browser is one command: `python3 -m research_control web render
 --url URL` prints a page's title and its text as desktop Chrome renders it
 (`--max-chars` to read less, `--links TEXT` to list only links containing that
 text). Use it for pages that refuse plain requests, such as github.com
 organization, people, repository, and profile pages.
+
+## What to search for and how to record it
 
 Search for what that crawl cannot reach: other first-party hosts and
 subdomains, applicant tracking systems, documentation portals, public code,
@@ -107,6 +117,9 @@ irrelevant mentions, or search-result pages. When a pass finds a new
 first-party surface, admitting it is enough; the runtime captures it.
 
 Admit what answers a question, not everything that exists:
+
+## Competitors and the market
+<!-- only: market_competitors -->
 
 - Competitors: admit the pages that establish a competitor's positioning,
   packaging, pricing, or the specific capability being compared. Do not admit a
@@ -207,11 +220,17 @@ Admit what answers a question, not everything that exists:
   roles, never personal details.
   Close as `sufficient` against the market and competitor questions, naming
   each competitor found, whether it is direct or adjacent, and the evidence.
+## Login-walled platforms
+<!-- only: social, video, podcasts, people -->
+
 - Social platforms that require login (LinkedIn, X, Facebook, Instagram,
   Threads, TikTok) are recorded automatically as uncaptured leads, except
   videos admitted on the `video` channel, which the runtime tries to transcribe. Admit the
   official profiles and any post that a question depends on, and look for a
   public copy (a press release, blog post, or transcript) of that content.
+## Public code
+<!-- only: code_packages -->
+
 - Public code (`code_packages`): catalog every public repository in the
   company's GitHub organizations. List an organization's repositories and
   people through the headless browser (`https://github.com/orgs/ORG/repositories`
@@ -280,6 +299,9 @@ Admit what answers a question, not everything that exists:
   relationship as a lead with thin evidence, not as an inferred client. Do not
   use GitHub search or API tools
   beyond the repositories the environment permits; use the routes above.
+## Video and podcasts
+<!-- only: video, podcasts, people -->
+
 - Video and podcasts, at every length (Shorts, clips, and social video drops
   included): enumerate every video on the company's own channels (YouTube,
   LinkedIn, X, Instagram, TikTok, Vimeo, and video embedded on the company
@@ -292,21 +314,32 @@ Admit what answers a question, not everything that exists:
   the publisher's episode page, the direct audio enclosure from its RSS feed,
   or a publisher-hosted player page.
 
+## Investors
+<!-- only: investors -->
+
 - Investors (`investors`): filings, earnings calls, and investor-day material
   for a public company; funding releases, investor posts, founder interviews,
   and Form D filings for a private one. Analyst-only funding claims stay
   unconfirmed until matched by stronger evidence; compare rounds with the
   company's own "raised to date" boilerplate. Check legal entities carefully.
+## People
+<!-- only: people -->
+
 - People (`people`): leadership and the relevant product, engineering, AI,
   marketing, sales, customer, and services leaders, with titles and dates,
   from the company's pages, event bios, bylines, and hire announcements.
   Record roles, never personal details. Feed talks and podcast appearances to
   the video and podcast channels.
+## Messaging history
+<!-- only: archives -->
+
 - Messaging history (`archives`): one Wayback snapshot per quarter across the
   lookback of the homepage and top product pages, admitted as raw `id_`
   snapshot URLs; the runtime dates each from the archive timestamp. When
   Wayback fails, the playbook in this brief lists the alternatives; fill gaps
   from dated first-party material.
+
+## Closing the channel
 
 Close each assigned channel with one terminal state and specific evidence:
 
