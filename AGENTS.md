@@ -53,11 +53,14 @@ example whether internal files on an employee's personal account count, and
 how to label them). Keep the model for those and cut everything else.
 
 - Model and effort: run the orchestrator on the `strong` tier (Claude Opus
-  5.5) at `medium` effort. Dispatch turns gain nothing from high effort, and
-  the judgment moments depend on the model class, not the effort setting.
-  When a run needs few interventions and all of them are mechanical (a
-  relaunch after a reported failure, a recapture after a method improved), try
-  the `standard` tier on the next run and compare.
+  5.5) at `high` effort. The effort setting applies to every turn and cannot
+  be raised only for the judgment moments, and those are where a shallower
+  read costs the most: a vaguer correction on a relaunch, a misread check
+  report, a weaker evidence call. High effort wastes some thinking on dispatch
+  turns; that waste is small next to context size and turn count, which the
+  rules below cut. Treat `medium` effort, and the `standard` tier, as
+  experiments: after a run on high has set a baseline (intervention count,
+  what the reviews found), change one of them on a later run and compare.
 - Context: compact at the start of every phase. Keep diagnostic output out of
   the conversation: read `run`'s short summary, open `run --full` only when the
   summary is not enough, and never paste a brief, a capture, or a fact store.
