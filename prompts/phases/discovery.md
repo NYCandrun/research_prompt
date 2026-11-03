@@ -46,7 +46,8 @@ company and for direct competitors alike:
   `https://archive.softwareheritage.org/browse/origin/directory/?origin_url=https://github.com/OWNER/REPO`
   and the runtime reads its file list and its Markdown and CSV files at the
   last archived commit, within the archive's request limit.
-- The Wayback Machine, for pages, when the network allows it.
+- The Wayback Machine, for pages; the archives section of the playbook in this
+  brief lists the routes and what to try when one fails.
 
 ## Finding GitHub organizations
 <!-- only: code_packages, market_competitors -->
@@ -296,9 +297,10 @@ Admit what answers a question, not everything that exists:
   strength, with the `Stated`, `Inferred`, or `Lead` mark the evidence core
   requires. A single commit, a repository name, a fork, a demo, or one
   person's activity alone is a lead: admit its source and mark the
-  relationship as a lead with thin evidence, not as an inferred client. Do not
-  use GitHub search or API tools
-  beyond the repositories the environment permits; use the routes above.
+  relationship as a lead with thin evidence, not as an inferred client.
+  GitHub's own search and API are usually closed to a cloud session; the
+  routes above (web search, GH Archive, the headless browser, Software
+  Heritage) work without them.
 ## Video and podcasts
 <!-- only: video, podcasts, people -->
 

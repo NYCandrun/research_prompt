@@ -23,13 +23,11 @@ markers. Update the generated receipt only with observed metadata; set
 `canonical_text_ready` to true and `status` to `captured` only after that
 derivative exists.
 
-If access is prohibited or fails after the permitted retry, create the assigned
-source directory with a nonempty `BLOCKED.txt` and write a receipt with
-`status: blocked`, the reason, access method, and evidence. Do not edit the
-canonical source manifest.
-
 The runtime's chain is the playbook's first approach for a page: a plain
-request with retries, then the headless browser, then a blocked receipt with
-the concrete refusal. A blocked source then goes to the alternate-copies pass,
-where a worker works the rest of the playbook before recording that no public
-copy exists.
+request with retries, then the headless browser. When both fail, it creates
+the assigned source directory with a nonempty `BLOCKED.txt` and a receipt
+with `status: blocked`, the concrete failure, the access method, and the
+evidence. A blocked source then goes to the alternate-copies pass, where a
+worker works the rest of the playbook before recording that no public copy
+exists. Nothing edits the canonical source manifest except the capture
+reducer.
