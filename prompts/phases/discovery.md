@@ -35,13 +35,25 @@ new first-party frontier. This can reopen a previously saturated company-site
 channel; the scheduler will invalidate and reissue that channel's stale receipt
 rather than losing the newly reachable branch.
 
-If a channel genuinely does not apply, or access is blocked, close it with
-specific evidence:
+If a channel genuinely does not apply, close it with specific evidence:
 
 ```bash
 python3 -m research_control discovery close \
   --channel CHANNEL --state not_applicable --evidence "EVIDENCE"
 ```
+
+If access fails, work through the playbook sections in this packet first:
+**Try first**, then **Then try**, then anything else, up to five distinct
+approaches. Log what worked with `workaround add`. Close a channel as blocked
+only after that, listing each approach:
+
+```bash
+python3 -m research_control discovery close \
+  --channel CHANNEL --state blocked --evidence "WHAT IS BLOCKED" \
+  --tried "approach -> result" --tried "approach -> result"
+```
+
+The runtime rejects a blocked close with fewer than two distinct approaches.
 
 Safety limits are circuit breakers. If one is reached, record `incomplete`, not
 `saturated`. Never use a requested number of sources as completion evidence.

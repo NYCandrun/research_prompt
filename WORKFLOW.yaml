@@ -15,6 +15,9 @@
   "global": {
     "fail_closed": true,
     "ledger": "tools/outputs/worker-ledger.jsonl",
+    "research_playbook": "RESEARCH_PLAYBOOK.md",
+    "workaround_log": "tools/outputs/workarounds.jsonl",
+    "workaround_report": "RESEARCH_WORKAROUNDS.md",
     "gate_directory": "tools/outputs/gates",
     "reconciliation_directory": "tools/outputs/reconciliation",
     "validation_directory": "tools/outputs/validations",

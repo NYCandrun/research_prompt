@@ -16,6 +16,7 @@ from research_control.io import (
     load_jsonl,
     utc_now,
 )
+from research_control.playbook import MIN_TRIED, distinct_tried
 from research_control.runtime import DISCOVERY_TERMINAL, RuntimeStore
 
 
@@ -58,6 +59,8 @@ def reduce_discovery(root: Path, store: RuntimeStore) -> dict[str, Any]:
             )
         if not str(part.get("evidence", "")).strip():
             failures.append(f"{item['channel']}: receipt lacks completion evidence")
+        if item["state"] == "blocked" and len(distinct_tried(part.get("tried"))) < MIN_TRIED:
+            failures.append(f"{item['channel']}: blocked receipt lists fewer than {MIN_TRIED} approaches tried")
     if failures:
         raise ValueError("invalid discovery receipts: " + "; ".join(failures))
     result = {
@@ -106,7 +109,8 @@ def reduce_capture_parts(root: Path, store: RuntimeStore) -> dict[str, Any]:
             or source.get("metadata", {}).get("discovery_error")
             or "source access blocked"
         )
-        blocked.append({"source_id": source["source_id"], "url": source["canonical_url"], "reason": reason})
+        tried = distinct_tried(part.get("tried") or source.get("metadata", {}).get("tried"))
+        blocked.append({"source_id": source["source_id"], "url": source["canonical_url"], "reason": reason, "tried": tried})
     for source in assigned:
         part = by_id[source["source_id"]]
         status = str(part.get("status", ""))
@@ -137,7 +141,13 @@ def reduce_capture_parts(root: Path, store: RuntimeStore) -> dict[str, Any]:
             dispositions.append(disposition)
         elif status == "blocked":
             reason = str(part.get("reason") or part.get("disposition", {}).get("reason") or "capture blocked")
-            blocked.append({"source_id": source["source_id"], "url": source["canonical_url"], "reason": reason})
+            tried = distinct_tried(part.get("tried"))
+            if len(tried) < MIN_TRIED:
+                raise ValueError(
+                    f"{source['source_id']}: blocked receipt lists fewer than {MIN_TRIED} approaches tried; "
+                    "record it with `source blocked --tried ... --tried ...`"
+                )
+            blocked.append({"source_id": source["source_id"], "url": source["canonical_url"], "reason": reason, "tried": tried})
         else:
             raise ValueError(f"{source['source_id']}: nonterminal capture receipt status {status!r}")
     if not manifest_rows:
@@ -159,7 +169,9 @@ def reduce_capture_parts(root: Path, store: RuntimeStore) -> dict[str, Any]:
     atomic_write_jsonl(root / "tools/outputs/capture-dispositions.jsonl", dispositions)
     blocked_lines = ["# Blocked sources", ""]
     if blocked:
-        blocked_lines.extend(f"- `{item['source_id']}` — {item['url']} — {item['reason']}" for item in blocked)
+        for item in blocked:
+            blocked_lines.append(f"- `{item['source_id']}` — {item['url']} — {item['reason']}")
+            blocked_lines.extend(f"  {index}. {approach}" for index, approach in enumerate(item.get("tried", []), 1))
     else:
         blocked_lines.append("None.")
     atomic_write_text(root / "01-sources/BLOCKED.md", "\n".join(blocked_lines) + "\n")

@@ -8,6 +8,7 @@ are circuit breakers: hitting one produces ``incomplete``, never ``saturated``.
 from __future__ import annotations
 
 import ipaddress
+import json
 import re
 import socket
 import time
@@ -21,6 +22,7 @@ from urllib.request import Request, build_opener
 
 from research_control.capture import PublicRedirectHandler, USER_AGENT, _robots_allowed
 from research_control.io import atomic_write_json, atomic_write_jsonl, atomic_write_text, utc_now, workflow
+from research_control.playbook import MIN_TRIED, distinct_tried, require_tried
 from research_control.runtime import DISCOVERY_COMPLETE, DISCOVERY_TERMINAL, RuntimeStore
 from research_control.web_cache import SharedWebCache
 
@@ -98,6 +100,18 @@ class LinkExtractor(HTMLParser):
             self.links.append((self._anchor, re.sub(r"\s+", " ", " ".join(self._text)).strip()))
             self._anchor = None
             self._text = []
+
+
+def channel_tried(row: dict[str, Any] | None) -> list[str]:
+    """Approaches recorded on a discovery channel row, whatever form the store returned them in."""
+    value = (row or {}).get("approaches_tried")
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    try:
+        loaded = json.loads(value or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [str(item) for item in loaded] if isinstance(loaded, list) else []
 
 
 def canonicalize_url(url: str, base: str | None = None) -> str:
@@ -488,9 +502,10 @@ class DiscoveryEngine:
             "channel_state": channel,
         }
 
-    def close_channel(self, channel: str, state: str, evidence: str) -> dict[str, Any]:
+    def close_channel(self, channel: str, state: str, evidence: str, tried: list[str] | None = None) -> dict[str, Any]:
         if state not in DISCOVERY_TERMINAL:
             raise ValueError("channel may only be closed as saturated, not_applicable, blocked, or incomplete")
+        approaches = require_tried(tried, channel) if state == "blocked" else distinct_tried(tried)
         if state == "saturated":
             current = self.store.discovery_channel(channel)
             if not current or int(current["consecutive_empty_passes"]) < self.policy.saturation_passes:
@@ -498,7 +513,7 @@ class DiscoveryEngine:
                     f"{channel}: saturation requires {self.policy.saturation_passes} recorded empty passes; "
                     "use `discovery add` for each materially different pass"
                 )
-        result = self.store.set_discovery_channel(channel, state, evidence)
+        result = self.store.set_discovery_channel(channel, state, evidence, approaches)
         self.write_catalog()
         return result
 
@@ -522,11 +537,12 @@ class DiscoveryEngine:
         lines = [
             "# Discovery coverage", "",
             "Discovery is complete only at documented channel saturation; it has no source-count target.", "",
-            "| Channel | State | Passes | New sources | Evidence |", "|---|---|---:|---:|---|",
+            "| Channel | State | Passes | New sources | Evidence | Approaches tried |", "|---|---|---:|---:|---|---|",
         ]
         for item in channels:
             evidence = str(item.get("completion_evidence") or "").replace("|", "\\|")
+            tried = "; ".join(channel_tried(item)).replace("|", "\\|")
             lines.append(
-                f"| {item['channel']} | {item['state']} | {item['total_passes']} | {item['total_new_sources']} | {evidence} |"
+                f"| {item['channel']} | {item['state']} | {item['total_passes']} | {item['total_new_sources']} | {evidence} | {tried} |"
             )
         atomic_write_text(self.root / "06-checks/discovery-coverage.md", "\n".join(lines) + "\n")

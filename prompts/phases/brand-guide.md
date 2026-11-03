@@ -54,10 +54,11 @@ company itself supplied it as official.
 
 ## Public-evidence boundary
 
-Use only public pages and assets. Do not sign in, create accounts, evade access
-controls, accept optional tracking merely to clear an overlay, or probe private
-systems. A public login page may be inspected. Record blocked or inaccessible
-surfaces rather than bypassing them.
+Use only public pages and assets. The playbook's off-limits list applies: no
+sign-in or accounts, no paying or paywall-removal tricks, no live paths that
+`robots.txt` disallows. Do not probe private systems. A public login page may
+be inspected. Work through the playbook's approaches before recording a surface
+as blocked, and list what was tried.
 
 The rendered experience is primary visual evidence, but HTML, computed CSS,
 font declarations, assets, print styles, and public reports are also required

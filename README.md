@@ -129,9 +129,35 @@ python3 -m research_control source capture --source-id SOURCE_ID
 ```
 
 Use the host's browser, PDF, OCR, caption, transcription, repository, or media
-tools for formats that need them. Respect robots rules, rate limits, logins,
-paywalls, and bot challenges. Record inaccessible evidence; do not bypass the
-restriction.
+tools for formats that need them.
+
+## Research playbook and workaround log
+
+Workers find the data as best they can. `RESEARCH_PLAYBOOK.md` holds, per
+channel, the approach that has worked before (**Try first**) and the
+alternatives (**Then try**). The packet writer copies the relevant sections
+into each discovery, capture, extraction, and brand packet, so no worker reads
+the playbook itself. A worker works through those approaches and its own ideas
+until something works or five distinct approaches fail. Only three things are
+off-limits: logins or accounts, paying or paywall-removal tricks, and live
+paths that `robots.txt` disallows.
+
+When anything other than **Try first** works, the worker logs it once per
+distinct problem:
+
+```bash
+python3 -m research_control workaround add --task TASK_ID --channel careers \
+  --target "boards.greenhouse.io" --failure "403 from the hosted board" \
+  --tried "rendered board page -> 403" --worked "boards-api JSON with token from embed script" \
+  --items 12 --applies platform --playbook-change "add token-from-embed-script step"
+```
+
+`run` rebuilds `RESEARCH_WORKAROUNDS.md` from the log. Review it after each run
+and fold what works into the playbook.
+
+A channel or source is blocked only after the approaches fail, and the record
+must list them. `discovery close --state blocked` and `source blocked` both
+take repeated `--tried "approach -> result"` flags and reject fewer than two.
 
 Research discovery and brand discovery remain separate agent responsibilities,
 but share a run-local transport cache and URL lead ledger in the scheduler.

@@ -19,3 +19,7 @@ disposition so the reducer can produce exactly one final disposition per
 canonical source.
 Report assigned sources, sources read, candidate count, zero-fact count,
 exceptions, output path, and validator result.
+
+When a source will not open, convert, or decode, get its text as best you can.
+Use the PDFs and Tooling sections in this packet, then anything else you can
+think of, up to five approaches. Log what worked with `workaround add`.

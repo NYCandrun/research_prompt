@@ -42,5 +42,16 @@ Never write to a shared manifest or shared review file from parallel workers.
 Write a worker-specific part for deterministic single-writer merge. Never
 commit unrelated workers' files.
 
-Respect public access: follow robots, back off when rate limited, do not bypass
-bot challenges, logins, or paywalls, and record blocked items.
+## Getting the data
+
+Find the data as best you can. Your packet carries the playbook sections for
+your task. Start with **Try first**, then **Then try**, then anything else you
+can think of, until something works or five distinct approaches have failed.
+Anything not on the off-limits list is allowed: no logins or accounts, no
+paying or paywall-removal tricks, no live paths that `robots.txt` disallows.
+Do not stop to judge an approach. A bot challenge is a failed approach, so
+move on. When rate limited, slow down and come back later.
+
+When anything other than **Try first** works, log it once per distinct problem
+with `python3 -m research_control workaround add ...`. A blocked record must
+list the approaches tried. The runtime rejects one with fewer than two.

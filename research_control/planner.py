@@ -206,7 +206,9 @@ class AdaptivePlanner:
             for source in self.store.sources():
                 if source["relevance"] in {"excluded", "duplicate"}:
                     continue
-                if source["status"] == "blocked":
+                if source["status"] == "blocked" and (source.get("metadata") or {}).get("capture_receipt"):
+                    # A worker already worked the playbook and recorded this source as blocked.
+                    # A crawl-time fetch failure alone is only the first approach failing, so it still gets a worker.
                     continue
                 task_id = f"capture.source.{source['source_id'].casefold()}"
                 capture_ids.append(task_id)

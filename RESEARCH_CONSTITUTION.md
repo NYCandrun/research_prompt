@@ -101,13 +101,29 @@ Facts supplied directly by the user are preserved verbatim as a Grade-I source
 and as facts with verdict `confirmed (user-provided)`. Do not independently
 check them unless the user asks.
 
-### Public-access boundary
+### Finding the data
 
-Use only public access. Never use logins, fake accounts, paywall workarounds, or
-bot-challenge bypasses. Follow `robots.txt`, back off when rate limited, and log
-failed access instead of routing around it. Try the Wayback Machine once. If
-the network path is blocked or repeatedly fails, stop that channel and use
-dated first-party sources for messaging history.
+Find the data as best you can.
+
+`RESEARCH_PLAYBOOK.md` lists, for each channel, the approach that has worked
+before and the alternatives to try next. The packet writer copies the relevant
+sections into each research packet. Workers start with the first approach,
+work through the alternatives and anything else they can think of, and stop
+only when something works or five distinct approaches have failed. They do not
+judge whether an approach is acceptable. Anything not on the off-limits list
+is allowed.
+
+The off-limits list is short and fixed: no logins or accounts, no payment or
+paywall-removal tricks, and no live paths that `robots.txt` disallows.
+Archived and syndicated copies are fine. A bot challenge counts as a failed
+approach. A rate limit means slow down and return later.
+
+When anything other than the first approach works, the worker logs the
+failure, every approach tried, and exactly what worked with one
+`workaround add` call. The `run` command renders those entries into
+`RESEARCH_WORKAROUNDS.md` for the user to review and fold into the playbook. A
+channel or source is blocked only after the approaches fail, and the runtime
+rejects a blocked record that lists fewer than two distinct approaches.
 
 ## Evidence
 

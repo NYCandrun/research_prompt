@@ -21,7 +21,19 @@ markers. Update the generated receipt only with observed metadata; set
 `canonical_text_ready` to true and `status` to `captured` only after that
 derivative exists.
 
-If access is prohibited or fails after the permitted retry, create the assigned
-source directory with a nonempty `BLOCKED.txt` and write a receipt with
-`status: blocked`, the reason, access method, and evidence. Do not bypass login,
-paywall, robots, or bot controls. Do not edit the canonical source manifest.
+If `source capture` fails, work through the playbook sections in this packet:
+**Try first**, then **Then try**, then anything else, up to five distinct
+approaches. Save whatever works into the assigned source directory and update
+the receipt with the method used. When an approach other than the first one
+works, log it with `workaround add`.
+
+Only after five approaches fail, record the source as blocked in one call:
+
+```bash
+python3 -m research_control source blocked --source-id SOURCE_ID \
+  --reason "WHY" --tried "approach -> result" --tried "approach -> result"
+```
+
+It writes `BLOCKED.txt` and the receipt. The runtime rejects a blocked record
+with fewer than two distinct approaches. Do not edit the canonical source
+manifest.

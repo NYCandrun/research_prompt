@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from urllib.robotparser import RobotFileParser
 
+from research_control.playbook import require_tried
 from research_control.io import atomic_write_json, atomic_write_text, utc_now
 from research_control.runtime import RuntimeStore
 from research_control.web_cache import SharedWebCache
@@ -378,3 +379,61 @@ def capture_source_part(
     receipt_path = root / "tools/outputs/worker-parts/capture" / f"{source_id}.json"
     atomic_write_json(receipt_path, receipt)
     return {**receipt, "receipt": str(receipt_path.relative_to(root))}
+
+
+def blocked_source_part(
+    root: Path,
+    *,
+    source_id: str,
+    reason: str,
+    tried: list[str],
+    access_method: str = "",
+    store: RuntimeStore | None = None,
+) -> dict[str, Any]:
+    """Record one source as blocked after the playbook's approaches failed.
+
+    Writes BLOCKED.txt and the worker receipt in one call. Refuses a record
+    that lists fewer than the required distinct approaches.
+    """
+    if not re.fullmatch(r"SRC-[A-F0-9]{12}|[A-Za-z0-9][A-Za-z0-9._-]*", source_id):
+        raise ValueError("source ID may contain only letters, numbers, period, underscore, and hyphen")
+    if not reason.strip():
+        raise ValueError("--reason is required")
+    approaches = require_tried(tried, source_id)
+    directory = root / "01-sources/captures" / source_id
+    directory.mkdir(parents=True, exist_ok=True)
+    blocked_path = directory / "BLOCKED.txt"
+    atomic_write_text(
+        blocked_path,
+        f"source: {source_id}\nreason: {reason.strip()}\naccess method: {access_method.strip() or 'see approaches'}\napproaches tried:\n"
+        + "".join(f"  {index}. {item}\n" for index, item in enumerate(approaches, 1)),
+    )
+    relative_blocked = str(blocked_path.relative_to(root))
+    receipt = {
+        "schema_version": "1.0.0",
+        "task_type": "capture",
+        "source_id": source_id,
+        "status": "blocked",
+        "reason": reason.strip(),
+        "access_method": access_method.strip(),
+        "tried": approaches,
+        "local_paths": [relative_blocked],
+        "canonical_text_ready": False,
+        "captured_at": utc_now(),
+        "disposition": {
+            "input_id": source_id,
+            "disposition": "blocked",
+            "reason": reason.strip(),
+            "evidence_paths": [relative_blocked],
+            "output_ids": [],
+        },
+    }
+    receipt_path = root / "tools/outputs/worker-parts/capture" / f"{source_id}.json"
+    atomic_write_json(receipt_path, receipt)
+    relative_receipt = str(receipt_path.relative_to(root))
+    if store is not None and store.source(source_id):
+        store.update_source(
+            source_id, status="blocked",
+            metadata={"capture_receipt": relative_receipt, "capture_reason": reason.strip(), "tried": approaches},
+        )
+    return {**receipt, "receipt": relative_receipt}

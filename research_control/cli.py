@@ -11,9 +11,9 @@ from typing import Any
 
 from research_control import PASS, __version__
 from research_control.adaptive import advance, complete_work, open_runtime, runtime_status
-from research_control.capture import capture_source_part, capture_url
+from research_control.capture import blocked_source_part, capture_source_part, capture_url
 from research_control.checks import check_phase
-from research_control.discovery import DISCOVERY_CHANNELS, DiscoveryEngine, DiscoveryPolicy, public_fetch
+from research_control.discovery import DISCOVERY_CHANNELS, DiscoveryEngine, DiscoveryPolicy, channel_tried, public_fetch
 from research_control.gates.release import check_release
 from research_control.io import workflow
 from research_control.orchestration import (
@@ -31,6 +31,7 @@ from research_control.publication import render
 from research_control.reducers import reduce_capture_parts, reduce_discovery, reduce_extraction_parts
 from research_control.reporting import print_summary
 from research_control.web_cache import SharedWebCache
+from research_control.workarounds import APPLIES, add_workaround, render_workarounds
 
 
 def _root(value: str | Path) -> Path:
@@ -57,6 +58,7 @@ def preflight(root: Path) -> int:
         "README.md",
         "RESEARCH_CONSTITUTION.md",
         "WORKFLOW.yaml",
+        "RESEARCH_PLAYBOOK.md",
         "prompts/core/runtime.md",
         "prompts/core/evidence.md",
         "prompts/core/writing.md",
@@ -212,6 +214,7 @@ def _parser() -> argparse.ArgumentParser:
     discovery_close.add_argument("--channel", required=True, choices=DISCOVERY_CHANNELS)
     discovery_close.add_argument("--state", required=True, choices=["saturated", "not_applicable", "blocked", "incomplete"])
     discovery_close.add_argument("--evidence", required=True)
+    discovery_close.add_argument("--tried", action="append", default=[], help="'approach -> result'; at least two for --state blocked")
     discovery_receipt = discovery_sub.add_parser("receipt", help="write the current channel's worker receipt")
     discovery_receipt.add_argument("--channel", required=True, choices=DISCOVERY_CHANNELS)
 
@@ -222,6 +225,23 @@ def _parser() -> argparse.ArgumentParser:
     source_capture.add_argument("--grade", choices=["P", "S", "T", "I"])
     source_capture.add_argument("--title")
     source_capture.add_argument("--publisher")
+    source_blocked = source_sub.add_parser("blocked", help="record a source as blocked after the playbook's approaches failed")
+    source_blocked.add_argument("--source-id", required=True)
+    source_blocked.add_argument("--reason", required=True)
+    source_blocked.add_argument("--tried", action="append", default=[], help="'approach -> result'; at least two")
+    source_blocked.add_argument("--access-method", default="")
+
+    workaround = subparsers.add_parser("workaround", help="log a research workaround that worked, or rebuild the report")
+    workaround_sub = workaround.add_subparsers(dest="workaround_command", required=True)
+    workaround_add = workaround_sub.add_parser("add", help="one entry per distinct problem")
+    for name in ("task", "channel", "target", "failure", "worked"):
+        workaround_add.add_argument(f"--{name}", required=True)
+    workaround_add.add_argument("--tried", action="append", default=[], help="'approach -> result' that did not work; repeatable")
+    workaround_add.add_argument("--items", type=int, default=1, help="how many items this fix solved")
+    workaround_add.add_argument("--applies", choices=APPLIES, default="host")
+    workaround_add.add_argument("--playbook-change", default="")
+    workaround_add.add_argument("--worker-id", default="")
+    workaround_sub.add_parser("report", help="rebuild RESEARCH_WORKAROUNDS.md from the log")
 
     web = subparsers.add_parser("web", help="use the shared transport cache and URL lead ledger")
     web_sub = web.add_subparsers(dest="web_command", required=True)
@@ -330,7 +350,7 @@ def main() -> None:
                         evidence=args.evidence, record_pass=True,
                     ))
                 elif args.discovery_command == "close":
-                    _print_json(engine.close_channel(args.channel, args.state, args.evidence))
+                    _print_json(engine.close_channel(args.channel, args.state, args.evidence, tried=args.tried))
                 else:
                     channel = store.discovery_channel(args.channel)
                     if not channel or channel["state"] == "open":
@@ -340,6 +360,7 @@ def main() -> None:
                         "status": channel["state"], "passes": channel["total_passes"],
                         "new_sources": channel["total_new_sources"],
                         "evidence": channel["completion_evidence"],
+                        "tried": channel_tried(channel),
                     }
                     path = root / "tools/outputs/worker-parts/discovery" / f"{args.channel.replace('_', '-')}.json"
                     from research_control.io import atomic_write_json
@@ -351,6 +372,12 @@ def main() -> None:
                 source_record = store.source(args.source_id)
                 if not source_record:
                     raise KeyError(f"unknown source: {args.source_id}")
+                if args.source_command == "blocked":
+                    _print_json(blocked_source_part(
+                        root, source_id=args.source_id, reason=args.reason, tried=args.tried,
+                        access_method=args.access_method, store=store,
+                    ))
+                    return
                 if source_record["channel"] in {"video", "podcasts"}:
                     raise ValueError(
                         f"{args.source_id}: media sources require caption/transcription capture and a manual receipt"
@@ -360,6 +387,16 @@ def main() -> None:
                     root, url=source_record["canonical_url"], source_id=args.source_id,
                     grade=grade, title=args.title, publisher=args.publisher, store=store,
                 ))
+            return
+        if args.command == "workaround":
+            if args.workaround_command == "add":
+                _print_json(add_workaround(
+                    root, task_id=args.task, channel=args.channel, target=args.target, failure=args.failure,
+                    tried=args.tried, worked=args.worked, items=args.items, applies=args.applies,
+                    playbook_change=args.playbook_change, worker_id=args.worker_id,
+                ))
+            else:
+                _print_json({"status": "rendered", "report": str(render_workarounds(root).relative_to(root))})
             return
         if args.command == "web":
             with open_runtime(root) as store:

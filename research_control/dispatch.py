@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from research_control.io import atomic_write_json, atomic_write_text, utc_now
+from research_control.playbook import playbook_for_task
 from research_control.runtime import RuntimeStore
 from research_control.routing import model_route
 
@@ -23,6 +24,7 @@ def _prompt(root: Path, relative: str) -> str:
 
 def write_packet(root: Path, task: dict[str, Any]) -> dict[str, Any]:
     route = model_route(root, task["task_type"])
+    playbook_keys, playbook_block = playbook_for_task(root, task)
     packet = {
         "schema_version": "2.0.0",
         "task_id": task["task_id"],
@@ -43,6 +45,7 @@ def write_packet(root: Path, task: dict[str, Any]) -> dict[str, Any]:
         "validators": task["validators"],
         "metadata": task["metadata"],
         "model_route": route,
+        "playbook_sections": playbook_keys,
         "created_at": utc_now(),
     }
     directory = root / PACKET_DIRECTORY
@@ -86,6 +89,8 @@ def write_packet(root: Path, task: dict[str, Any]) -> dict[str, Any]:
     ])
     for relative in task["prompt_files"]:
         lines.extend([f"### `{relative}`", "", _prompt(root, relative), ""])
+    if playbook_block:
+        lines.extend([playbook_block])
     lines.extend([
         "## Lifecycle protocol",
         "",

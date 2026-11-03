@@ -78,3 +78,54 @@ class DiscoveryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BlockedRecordTests(unittest.TestCase):
+    def _engine(self, root: Path):
+        shutil.copy2(SOURCE_ROOT / "WORKFLOW.yaml", root / "WORKFLOW.yaml")
+        store = RuntimeStore(root)
+        store.initialize(run_id="blocked-1", company_url="https://example.com")
+        engine = DiscoveryEngine(root, store)
+        engine.initialize()
+        return store, engine
+
+    def test_blocked_close_requires_two_distinct_approaches(self) -> None:
+        from research_control.discovery import channel_tried
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, engine = self._engine(root)
+            with store:
+                with self.assertRaises(ValueError):
+                    engine.close_channel("social", "blocked", "login wall")
+                with self.assertRaises(ValueError):
+                    engine.close_channel("social", "blocked", "login wall", tried=["direct fetch -> login wall", "direct fetch -> login wall"])
+                engine.close_channel("not_applicable_channel".replace("not_applicable_channel", "podcasts"), "not_applicable", "no podcast exists")
+                result = engine.close_channel(
+                    "social", "blocked", "login wall on every surface",
+                    tried=["direct fetch -> login wall", "Wayback snapshot -> no captures", "company blog copy -> none"],
+                )
+                self.assertEqual(result["state"], "blocked")
+                self.assertEqual(len(channel_tried(store.discovery_channel("social"))), 3)
+                coverage = (root / "06-checks/discovery-coverage.md").read_text(encoding="utf-8")
+                self.assertIn("Approaches tried", coverage)
+                self.assertIn("Wayback snapshot -> no captures", coverage)
+
+    def test_blocked_source_part_writes_receipt_and_needs_approaches(self) -> None:
+        from research_control.capture import blocked_source_part
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, engine = self._engine(root)
+            with store:
+                engine.add_candidates("independent_web", ["https://news.example.org/story"], discovered_from="test", evidence="fixture", record_pass=True)
+                source_id = store.sources()[0]["source_id"]
+                with self.assertRaises(ValueError):
+                    blocked_source_part(root, source_id=source_id, reason="paywall", tried=["direct -> paywall"], store=store)
+                receipt = blocked_source_part(
+                    root, source_id=source_id, reason="hard paywall",
+                    tried=["direct fetch -> paywall", "Wayback -> no snapshot", "syndicated copy -> none found"], store=store,
+                )
+                self.assertEqual(receipt["status"], "blocked")
+                self.assertTrue((root / "01-sources/captures" / source_id / "BLOCKED.txt").is_file())
+                self.assertTrue((root / receipt["receipt"]).is_file())
+                self.assertEqual(store.source(source_id)["status"], "blocked")
+                self.assertEqual(len(store.source(source_id)["metadata"]["tried"]), 3)

@@ -116,6 +116,13 @@ class RuntimeStore:
         self.connection.execute("PRAGMA synchronous = FULL")
         self.connection.execute("PRAGMA busy_timeout = 30000")
         self._create_schema()
+        self._add_column("discovery_channels", "approaches_tried", "TEXT NOT NULL DEFAULT '[]'")
+
+    def _add_column(self, table: str, column: str, definition: str) -> None:
+        existing = {row[1] for row in self.connection.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            with self.connection:
+                self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def __enter__(self) -> "RuntimeStore":
         return self
@@ -926,16 +933,17 @@ class RuntimeStore:
         self.event("discovery_pass", channel, {"new_sources": new_sources, "state": state, "evidence": evidence})
         return result
 
-    def set_discovery_channel(self, channel: str, state: str, evidence: str) -> dict[str, Any]:
+    def set_discovery_channel(self, channel: str, state: str, evidence: str, tried: list[str] | None = None) -> dict[str, Any]:
         if state not in DISCOVERY_TERMINAL | {"open"}:
             raise ValueError(f"unsupported discovery state: {state}")
         self.ensure_discovery_channel(channel)
+        approaches = [str(item) for item in (tried or [])]
         with self.connection:
             self.connection.execute(
-                "UPDATE discovery_channels SET state=?, completion_evidence=?, updated_at=? WHERE channel=?",
-                (state, evidence, utc_now(), channel),
+                "UPDATE discovery_channels SET state=?, completion_evidence=?, approaches_tried=?, updated_at=? WHERE channel=?",
+                (state, evidence, _json(approaches), utc_now(), channel),
             )
-        self.event("discovery_channel_updated", channel, {"state": state, "evidence": evidence})
+        self.event("discovery_channel_updated", channel, {"state": state, "evidence": evidence, "tried": approaches})
         return self.discovery_channel(channel) or {}
 
     def discovery_channel(self, channel: str) -> dict[str, Any] | None:

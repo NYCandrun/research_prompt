@@ -19,8 +19,8 @@ one-word rolling-caption lines.
 
 Parallel workers write only assigned manifest parts, blocked parts, evidence
 paths, and scratch directories. The orchestrator performs the deterministic
-single-writer merge into the canonical manifest. Respect access and host
-pacing. Do not bypass restrictions.
+single-writer merge into the canonical manifest. Follow the playbook sections
+in the packet and respect host pacing.
 
 The completed phase must include the canonical manifest, publish-date overlay,
 blocked log, coverage report, extraction work list, and one disposition per
