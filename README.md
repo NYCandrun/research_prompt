@@ -436,8 +436,30 @@ a git bundle of each cloned repository with all history, branches, and pull
 request heads (`01-sources/repositories/`, with a manifest; a bundle over the
 remote's file limit is listed and its captured text kept). It leaves out
 downloaded audio, whose transcript is kept, the HTTP transport cache, and
-worker scratch space. Archive after every `run` that captures sources and
-after each wave of workers.
+worker scratch space.
+
+`run` archives on its own: before every phase check, at the start of every
+phase, and at the end of the run, it saves the run, pushes, and confirms with
+the remote that the push landed (it stops with a clear reason when it cannot).
+The control agent's conversation goes with it each time. Archive by hand only
+when you want a save between those points, for example after a long wave of
+workers.
+
+To continue a run on another machine, from a fresh template checkout:
+
+```bash
+python3 -m research_control resume --url "COMPANY_URL"
+cd runs/<company-slug>
+python3 -m research_control run
+```
+
+`resume` fetches the run's branch into `runs/<slug>`, restores the scheduler
+database from the archived snapshot, syncs this checkout's engine into the
+run, and releases the leases workers on the old machine still held, so their
+tasks come back as ready. Later archives extend the same branch. The HTTP
+cache and cloned repositories are not in the archive; captures that need them
+again fetch again, and the archived bundles under `01-sources/repositories/`
+keep every repository's history.
 
 ## Public archives
 

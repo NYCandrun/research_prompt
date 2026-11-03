@@ -227,6 +227,12 @@ def _parser() -> argparse.ArgumentParser:
     new = subparsers.add_parser("new", help="provision an isolated run directory and initialize it")
     new.add_argument("--url", required=True)
     new.add_argument("--dir", help="run directory (default: runs/<company-host-slug>)")
+    resume = subparsers.add_parser("resume", help="restore a run from its run-data branch on the remote and continue it here")
+    resume.add_argument("--url", help="the company URL the run was started with (names the run-data branch)")
+    resume.add_argument("--slug", help="the run's slug, when known")
+    resume.add_argument("--branch", help="branch (default: run-data/<slug>)")
+    resume.add_argument("--remote", help="remote URL (default: the template checkout's origin)")
+    resume.add_argument("--dir", help="run directory (default: runs/<slug>)")
     subparsers.add_parser("sync-engine", help="refresh a run's engine, prompts, and policy from its template")
     init = subparsers.add_parser("init", help="initialize a URL-only research run")
     init.add_argument("--url", required=True)
@@ -529,6 +535,16 @@ def main() -> None:
                 "next": f"cd {relative} && python3 -m research_control run",
                 "advance": result,
             })
+            return
+        if args.command == "resume":
+            from research_control.resume import resume_run
+
+            result = resume_run(
+                root, slug=args.slug, url=args.url, branch=args.branch, remote=args.remote,
+                run_root=Path(args.dir).resolve() if args.dir else None,
+            )
+            relative = os.path.relpath(result["run_root"], Path.cwd())
+            _print_json({**result, "next": f"cd {relative} && python3 -m research_control run"})
             return
         if args.command == "sync-engine":
             template = Path(__file__).resolve().parents[1]

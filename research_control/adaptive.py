@@ -131,6 +131,15 @@ def advance(root: Path, company_url: str | None = None, *, automatic: bool = Tru
             if active:
                 return {"status": "waiting", "phase": phase, "active_tasks": active, "runtime": store.summary()}
             if tasks and all(task["state"] in SATISFIED_STATES for task in tasks):
+                # Everything the phase produced is on the remote before its check runs, so a
+                # failed check or a lost machine costs nothing that was already done.
+                saved = ensure_conversation_pushed(root, f"before the {phase} gate")
+                if not saved["on_remote"]:
+                    return {
+                        "status": "blocked", "phase": phase,
+                        "reason": f"the run could not be saved to GitHub before the {phase} check "
+                                  f"({saved.get('detail', '')}); fix the push and run again",
+                    }
                 report, path = check_phase(root, phase, update_state=True)
                 if report["status"] != PASS and _refresh_dependency_gates(root, report):
                     report, path = check_phase(root, phase, update_state=True)

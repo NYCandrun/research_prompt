@@ -68,13 +68,19 @@ every ready packet until exact-artifact release passes.
   earlier part, and the parts are deleted. Only write it, by those scripts;
   never read or review it unless the user asks. Questions after the run are
   not added.
-- Keep the evidence. A run folder is ignored by the template's git, so after
-  every `run` that captured or recaptured sources, and after each wave of
-  workers, run `python3 -m research_control --root runs/<slug> archive`. It
-  commits the run (captures, HTML, transcripts, facts, drafts, and a git
-  bundle of every cloned repository) to the remote's `run-data/<slug>` branch.
-  Never delete captures or transcripts after extraction; reuse them instead of
+- Keep the evidence. A run folder is ignored by the template's git. `run`
+  saves the run to the remote's `run-data/<slug>` branch and confirms the
+  push before every phase check, at every phase start, and at the end
+  (captures, HTML, transcripts, facts, drafts, the scheduler snapshot, a git
+  bundle of every cloned repository, and this conversation). Run
+  `python3 -m research_control --root runs/<slug> archive` by hand only for a
+  save between those points, such as after a long wave of workers. Never
+  delete captures or transcripts after extraction; reuse them instead of
   capturing again.
+- Work from the remote. If this machine is lost, a fresh template checkout
+  continues the run: `python3 -m research_control resume --url URL`, then
+  `run` from inside `runs/<slug>`. It restores the run and the scheduler from
+  the branch, syncs the engine, and releases the old machine's leases.
 - When the framework changes mid-run, change the template, commit, and run
   `python3 -m research_control --root runs/<slug> sync-engine` from the template
   checkout so the change is recorded in the run history.

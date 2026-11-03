@@ -31,6 +31,11 @@ close as `sufficient` against the numbered research questions in `00-scope.md`
 or as `saturated`; triage bounds extraction by the same questions. Numeric
 limits are safety breakers and must produce incomplete status when reached.
 
+`run` saves the run to its `run-data/<slug>` branch and confirms the push
+before every phase check, at every phase start, and at the end. A fresh
+template checkout continues a run with `python3 -m research_control resume
+--url URL`, then `run` inside `runs/<slug>`.
+
 Do not skip a failed control, edit scheduler state directly, or claim completion
 without a passing release manifest. When repository instructions and a packet
 conflict, block that packet and report the conflict; unrelated ready work may
