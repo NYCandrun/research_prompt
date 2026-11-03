@@ -6,12 +6,6 @@ ledger, `WORKFLOW_STATE.md`, `RUN_HISTORY.md`, shared manifests, global blocked
 logs, citation maps, repository configuration, or another worker's output
 unless the assignment names that shared-state responsibility.
 
-The one infrastructure exception is the controlled `python3 -m research_control
-web ...` interface. It may update the run-local URL ledger and immutable response
-cache. That cache is transport only: a URL or cached object is not research
-evidence, brand evidence, or a factual claim until the consuming packet admits
-it through its own required evidence records.
-
 ## Assignment contract
 
 Before work starts, the assignment must provide:
@@ -42,16 +36,44 @@ Never write to a shared manifest or shared review file from parallel workers.
 Write a worker-specific part for deterministic single-writer merge. Never
 commit unrelated workers' files.
 
-## Getting the data
+## The web interface
+<!-- only: source_discovery, alternate_copies, brand_guide, scope, capture -->
 
-Find the data as best you can. Your packet carries the playbook sections for
-your task. Start with **Try first**, then **Then try**, then anything else you
-can think of, until something works or five distinct approaches have failed.
-Anything not on the off-limits list is allowed: no logins or accounts, no
-paying or paywall-removal tricks, no live paths that `robots.txt` disallows.
-Do not stop to judge an approach. A bot challenge is a failed approach, so
-move on. When rate limited, slow down and come back later.
+The one infrastructure exception is the controlled `python3 -m research_control
+web ...` interface. It may update the run-local URL ledger and immutable response
+cache. That cache is transport only: a URL or cached object is not research
+evidence, brand evidence, or a factual claim until the consuming packet admits
+it through its own required evidence records.
 
-When anything other than **Try first** works, log it once per distinct problem
-with `python3 -m research_control workaround add ...`. A blocked record must
-list the approaches tried. The runtime rejects one with fewer than two.
+## Browsing
+<!-- only: source_discovery, alternate_copies, brand_guide, scope, capture, visual_review, orchestrator_page_review, diagram_builder -->
+
+Back off when rate limited and record blocked items. When you use a browser
+(screenshots, rendering, inspecting a page), present as desktop Chrome in a
+desktop-sized window (for example 1440x900, not mobile) so you see the desktop
+layout and content, unless the task asks for a mobile view.
+
+## American English
+
+Write everything you author in American English, in spelling and in
+vocabulary: fact claims and notes, reasons, synthesis, reviews, the report,
+labels, and captions: "program", not "programme"; "color", "organize",
+"center", "analyze", "catalog", "license" (the noun), "modeled", "labeled";
+"job posting", not "job advert"; "opening", not "vacancy"; "fiscal year",
+not "financial year"; "revenue", not "turnover"; "year over year", not
+"year on year"; "toward", "while", "among"; "the company is", not
+"the company are". Verbatim quotes, quoted titles, and names keep the
+source's spelling. `work check` lists British spellings and terms in the text
+you wrote, and `work succeed` refuses them.
+
+## Checks and source wording
+
+A check that flags text you believe is right as the source has it (a product
+or standard name shaped like an ID, a quoted term) is a false positive. Do not
+reword the source's text to satisfy it: leave it and name the check and the
+text in your report, so the orchestrator fixes the check.
+
+## Reports in plain English
+
+Your report goes to the orchestrator and may be shown to the user as is.
+Write for the user in plain English. Leave out jargon and internal shorthand ("shard", "slice", "packet", "gate", "reconcile", "the X repo"): say what a thing is ("a batch of 48 facts to verify", "a chunk of a source's text", "the phase checks"), name a repository by its GitHub name (owner/repository, for example carlmueller-tribe/mori), and name a source by what it is (a podcast episode, a company blog post), not only by its ID.

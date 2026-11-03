@@ -54,11 +54,8 @@ company itself supplied it as official.
 
 ## Public-evidence boundary
 
-Use only public pages and assets. The playbook's off-limits list applies: no
-sign-in or accounts, no paying or paywall-removal tricks, no live paths that
-`robots.txt` disallows. Do not probe private systems. A public login page may
-be inspected. Work through the playbook's approaches before recording a surface
-as blocked, and list what was tried.
+Do not accept optional tracking merely to clear an overlay, and do not probe
+private systems. Record blocked or inaccessible surfaces.
 
 The rendered experience is primary visual evidence, but HTML, computed CSS,
 font declarations, assets, print styles, and public reports are also required
@@ -184,3 +181,8 @@ PASS, NOT APPLICABLE, or BLOCKED plus
 specific evidence for every requirement above. A blocked public source is an
 evidence limitation; a blocked output, missing QA render, or known visual
 defect is not completion.
+
+Write the guide's own text in American English, in spelling and in vocabulary ("color", "center",
+"program"). When you show the company's own copy (a tagline, a headline, a button label), put it in
+quotation marks or a `<q>` or `<blockquote>` element so it keeps the company's spelling and is not
+flagged. `work check` lists anything British in the guide's text, and `work succeed` refuses it.

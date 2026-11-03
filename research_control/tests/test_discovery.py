@@ -5,7 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from research_control.discovery import DiscoveryEngine, DiscoveryPolicy, FetchResult, canonicalize_url, xml_links
+from research_control.discovery import (
+    DiscoveryEngine,
+    DiscoveryPolicy,
+    FetchResult,
+    canonicalize_url,
+    discoverable_link,
+    xml_links,
+)
 from research_control.runtime import RuntimeStore
 
 
@@ -13,6 +20,12 @@ SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_share_intent_links_are_not_discoverable_evidence(self) -> None:
+        self.assertFalse(discoverable_link("https://www.linkedin.com/sharing/share-offsite/?url=https://example.com"))
+        self.assertFalse(discoverable_link("https://twitter.com/intent/tweet?url=https://example.com"))
+        self.assertFalse(discoverable_link("https://x.com/intent/tweet?url=https://example.com"))
+        self.assertTrue(discoverable_link("https://www.linkedin.com/company/example"))
+
     def test_sitemap_and_feed_links_are_extracted(self) -> None:
         body = b'<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/a</loc></url><url><loc>https://example.com/b</loc></url></urlset>'
         self.assertEqual(["https://example.com/a", "https://example.com/b"], xml_links(body))
@@ -75,57 +88,68 @@ class DiscoveryTests(unittest.TestCase):
                 self.assertFalse(summary["complete"])
                 self.assertIn("video", summary["limitations"])
 
+    def test_explicit_retry_returns_only_blocked_channel_sources_to_frontier(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copy2(SOURCE_ROOT / "WORKFLOW.yaml", root / "WORKFLOW.yaml")
+            with RuntimeStore(root) as store:
+                store.initialize(run_id="discover-retry", company_url="https://example.com")
+                engine = DiscoveryEngine(root, store)
+                engine.initialize()
+                result = engine.add_candidates(
+                    "company_site",
+                    ["https://example.com/about"],
+                    discovered_from="fixture",
+                    evidence="fixture branch",
+                    record_pass=False,
+                )
+                source_id = result["new_source_ids"][0]
+                store.update_source(
+                    source_id,
+                    status="blocked",
+                    metadata={"discovery_error": "temporary DNS failure", "fixture": True},
+                )
+                store.set_discovery_channel("company_site", "saturated", "stale empty-pass proof")
+
+                retried = engine.retry_blocked_sources(
+                    "company_site", evidence="approved public network is now available"
+                )
+
+                self.assertEqual([source_id], retried["source_ids"])
+                self.assertEqual("discovered", store.source(source_id)["status"])
+                self.assertTrue(store.source(source_id)["metadata"]["fixture"])
+                self.assertEqual("temporary DNS failure", store.source(source_id)["metadata"]["discovery_retry"]["prior_error"])
+                channel = store.discovery_channel("company_site")
+                self.assertEqual("open", channel["state"])
+                self.assertEqual(0, channel["consecutive_empty_passes"])
+
+    def test_explicit_exclusion_preserves_lead_and_removes_it_from_capture_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copy2(SOURCE_ROOT / "WORKFLOW.yaml", root / "WORKFLOW.yaml")
+            with RuntimeStore(root) as store:
+                store.initialize(run_id="discover-exclude", company_url="https://example.com")
+                engine = DiscoveryEngine(root, store)
+                engine.initialize()
+                source, _created = store.add_source(
+                    canonical_url="https://twitter.com/intent/tweet?url=https://example.com",
+                    original_url="https://twitter.com/intent/tweet?url=https://example.com",
+                    host_key="twitter.com",
+                    channel="social",
+                    source_kind="web_page",
+                )
+
+                result = engine.exclude_sources(
+                    "social",
+                    source_ids=[source["source_id"]],
+                    evidence="share-intent transport is not research evidence",
+                )
+
+                self.assertEqual(1, result["excluded"])
+                updated = store.source(source["source_id"])
+                self.assertEqual("excluded", updated["relevance"])
+                self.assertIn("discovery_exclusion", updated["metadata"])
+
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class BlockedRecordTests(unittest.TestCase):
-    def _engine(self, root: Path):
-        shutil.copy2(SOURCE_ROOT / "WORKFLOW.yaml", root / "WORKFLOW.yaml")
-        store = RuntimeStore(root)
-        store.initialize(run_id="blocked-1", company_url="https://example.com")
-        engine = DiscoveryEngine(root, store)
-        engine.initialize()
-        return store, engine
-
-    def test_blocked_close_requires_two_distinct_approaches(self) -> None:
-        from research_control.discovery import channel_tried
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store, engine = self._engine(root)
-            with store:
-                with self.assertRaises(ValueError):
-                    engine.close_channel("social", "blocked", "login wall")
-                with self.assertRaises(ValueError):
-                    engine.close_channel("social", "blocked", "login wall", tried=["direct fetch -> login wall", "direct fetch -> login wall"])
-                engine.close_channel("not_applicable_channel".replace("not_applicable_channel", "podcasts"), "not_applicable", "no podcast exists")
-                result = engine.close_channel(
-                    "social", "blocked", "login wall on every surface",
-                    tried=["direct fetch -> login wall", "Wayback snapshot -> no captures", "company blog copy -> none"],
-                )
-                self.assertEqual(result["state"], "blocked")
-                self.assertEqual(len(channel_tried(store.discovery_channel("social"))), 3)
-                coverage = (root / "06-checks/discovery-coverage.md").read_text(encoding="utf-8")
-                self.assertIn("Approaches tried", coverage)
-                self.assertIn("Wayback snapshot -> no captures", coverage)
-
-    def test_blocked_source_part_writes_receipt_and_needs_approaches(self) -> None:
-        from research_control.capture import blocked_source_part
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store, engine = self._engine(root)
-            with store:
-                engine.add_candidates("independent_web", ["https://news.example.org/story"], discovered_from="test", evidence="fixture", record_pass=True)
-                source_id = store.sources()[0]["source_id"]
-                with self.assertRaises(ValueError):
-                    blocked_source_part(root, source_id=source_id, reason="paywall", tried=["direct -> paywall"], store=store)
-                receipt = blocked_source_part(
-                    root, source_id=source_id, reason="hard paywall",
-                    tried=["direct fetch -> paywall", "Wayback -> no snapshot", "syndicated copy -> none found"], store=store,
-                )
-                self.assertEqual(receipt["status"], "blocked")
-                self.assertTrue((root / "01-sources/captures" / source_id / "BLOCKED.txt").is_file())
-                self.assertTrue((root / receipt["receipt"]).is_file())
-                self.assertEqual(store.source(source_id)["status"], "blocked")
-                self.assertEqual(len(store.source(source_id)["metadata"]["tried"]), 3)

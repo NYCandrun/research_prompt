@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import csv
+import re
 from io import StringIO
 from pathlib import Path
 from typing import Any
 
 from research_control.capture import MANIFEST_FIELDS
+from research_control.discovery import ALTERNATES_PART, coverage_markdown
+from research_control.dating import write_source_dates
+from research_control.validators import facts as fact_tables
 from research_control.io import (
     atomic_write_json,
     atomic_write_jsonl,
@@ -16,8 +20,9 @@ from research_control.io import (
     load_jsonl,
     utc_now,
 )
-from research_control.playbook import MIN_TRIED, distinct_tried
-from research_control.runtime import DISCOVERY_TERMINAL, RuntimeStore
+from research_control.runtime import DISCOVERY_TERMINAL, UNCAPTURED_RELEVANCE, RuntimeStore
+from research_control.triage import excluded_dispositions
+from research_control.filing import fact_key
 
 
 def _json_parts(directory: Path) -> list[dict[str, Any]]:
@@ -59,20 +64,19 @@ def reduce_discovery(root: Path, store: RuntimeStore) -> dict[str, Any]:
             )
         if not str(part.get("evidence", "")).strip():
             failures.append(f"{item['channel']}: receipt lacks completion evidence")
-        if item["state"] == "blocked" and len(distinct_tried(part.get("tried"))) < MIN_TRIED:
-            failures.append(f"{item['channel']}: blocked receipt lists fewer than {MIN_TRIED} approaches tried")
     if failures:
         raise ValueError("invalid discovery receipts: " + "; ".join(failures))
     result = {
         "schema_version": "1.0.0",
         "status": "PASS_WITH_LIMITATIONS" if any(item["state"] == "blocked" for item in channels) else "PASS",
-        "completion_rule": "channel saturation, not a source-count quota",
+        "completion_rule": "first-party fixed point plus question sufficiency or saturation; never a source count",
         "channels": channels,
         "source_count": len(store.sources()),
         "receipt_count": len(parts),
         "completed_at": utc_now(),
     }
     atomic_write_json(root / "tools/outputs/discovery/final.json", result)
+    atomic_write_text(root / "06-checks/discovery-coverage.md", coverage_markdown(channels))
     return result
 
 
@@ -88,7 +92,7 @@ def reduce_capture_parts(root: Path, store: RuntimeStore) -> dict[str, Any]:
         by_id[source_id] = part
     considered = [
         source for source in store.sources()
-        if source["relevance"] not in {"excluded", "duplicate"}
+        if source["relevance"] not in UNCAPTURED_RELEVANCE
     ]
     assigned = [source for source in considered if source["status"] != "blocked"]
     missing = [source["source_id"] for source in assigned if source["source_id"] not in by_id]
@@ -109,8 +113,7 @@ def reduce_capture_parts(root: Path, store: RuntimeStore) -> dict[str, Any]:
             or source.get("metadata", {}).get("discovery_error")
             or "source access blocked"
         )
-        tried = distinct_tried(part.get("tried") or source.get("metadata", {}).get("tried"))
-        blocked.append({"source_id": source["source_id"], "url": source["canonical_url"], "reason": reason, "tried": tried})
+        blocked.append({"source_id": source["source_id"], "url": source["canonical_url"], "reason": reason})
     for source in assigned:
         part = by_id[source["source_id"]]
         status = str(part.get("status", ""))
@@ -141,13 +144,7 @@ def reduce_capture_parts(root: Path, store: RuntimeStore) -> dict[str, Any]:
             dispositions.append(disposition)
         elif status == "blocked":
             reason = str(part.get("reason") or part.get("disposition", {}).get("reason") or "capture blocked")
-            tried = distinct_tried(part.get("tried"))
-            if len(tried) < MIN_TRIED:
-                raise ValueError(
-                    f"{source['source_id']}: blocked receipt lists fewer than {MIN_TRIED} approaches tried; "
-                    "record it with `source blocked --tried ... --tried ...`"
-                )
-            blocked.append({"source_id": source["source_id"], "url": source["canonical_url"], "reason": reason, "tried": tried})
+            blocked.append({"source_id": source["source_id"], "url": source["canonical_url"], "reason": reason})
         else:
             raise ValueError(f"{source['source_id']}: nonterminal capture receipt status {status!r}")
     if not manifest_rows:
@@ -167,26 +164,57 @@ def reduce_capture_parts(root: Path, store: RuntimeStore) -> dict[str, Any]:
         ],
     )
     atomic_write_jsonl(root / "tools/outputs/capture-dispositions.jsonl", dispositions)
+    alternates_path = root / ALTERNATES_PART
+    alternates: dict[str, list[dict[str, Any]]] = {}
+    for row in (load_jsonl(alternates_path) if alternates_path.is_file() else []):
+        alternates.setdefault(str(row.get("source_id")), []).append(row)
+    captured_ids = {row["id"] for row in manifest_rows}
+
+    def alternate_note(source_id: str) -> str:
+        rows = alternates.get(source_id, [])
+        found = [row["alternate_source_id"] for row in rows if row.get("outcome") == "admitted"]
+        if found:
+            states = [f"`{value}` ({'captured' if value in captured_ids else 'not captured'})" for value in found]
+            return " — alternate copy: " + ", ".join(states)
+        return " — no public alternate copy found" if rows else ""
+
     blocked_lines = ["# Blocked sources", ""]
     if blocked:
-        for item in blocked:
-            blocked_lines.append(f"- `{item['source_id']}` — {item['url']} — {item['reason']}")
-            blocked_lines.extend(f"  {index}. {approach}" for index, approach in enumerate(item.get("tried", []), 1))
+        blocked_lines.extend(
+            f"- `{item['source_id']}` — {item['url']} — {item['reason']}{alternate_note(item['source_id'])}"
+            for item in blocked
+        )
     else:
         blocked_lines.append("None.")
     atomic_write_text(root / "01-sources/BLOCKED.md", "\n".join(blocked_lines) + "\n")
+    leads = [source for source in store.sources() if source["relevance"] == "lead"]
     coverage = [
         "# Capture coverage", "",
-        "Source discovery used channel saturation rather than a source-count quota.", "",
+        "Discovery had no source-count quota. The runtime crawled the first-party site to a fixed point and "
+        "search channels closed as sufficient for named research questions or saturated.", "",
         f"- Discovered records considered: {len(considered)}",
+        f"- Login-walled platform URLs kept as uncaptured leads: {len(leads)}",
         f"- Captured with canonical text: {len(manifest_rows)}",
         f"- Blocked: {len(blocked)}",
         f"- Disposition records: {len(dispositions)}",
         "",
         "See `06-checks/discovery-coverage.md` for per-channel fixed-point evidence.",
     ]
+    media = [part for part in parts if part.get("transcript")]
+    if media:
+        transcribed = [part for part in media if part["transcript"].get("status") == "transcribed"]
+        coverage.extend([
+            "", "## Media transcripts", "",
+            f"- Media sources: {len(media)}; transcribed: {len(transcribed)}; without transcript: {len(media) - len(transcribed)}",
+        ])
+        coverage.extend(
+            f"- `{part['source_id']}` transcript unavailable: {part['transcript'].get('reason', 'unknown')}"
+            for part in media if part["transcript"].get("status") != "transcribed"
+        )
     atomic_write_text(root / "06-checks/coverage.md", "\n".join(coverage) + "\n")
+    dating = write_source_dates(root, parts)
     return {
+        "source_dating": dating,
         "status": "PASS",
         "assigned": len(considered),
         "captured": len(manifest_rows),
@@ -195,10 +223,15 @@ def reduce_capture_parts(root: Path, store: RuntimeStore) -> dict[str, Any]:
     }
 
 
-def reduce_extraction_parts(root: Path) -> dict[str, Any]:
+def reduce_extraction_parts(root: Path, batches: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Merge extraction parts; with ``batches``, only those batches' parts (superseded ones are left out)."""
     directory = root / "tools/outputs/worker-parts/extraction"
-    candidate_paths = sorted(directory.glob("*.candidates.jsonl")) if directory.is_dir() else []
-    disposition_paths = sorted(directory.glob("*.dispositions.jsonl")) if directory.is_dir() else []
+    if batches is not None:
+        candidate_paths = sorted(root / task["metadata"]["candidate_part"] for task in batches)
+        disposition_paths = sorted(root / task["metadata"]["disposition_part"] for task in batches)
+    else:
+        candidate_paths = sorted(directory.glob("*.candidates.jsonl")) if directory.is_dir() else []
+        disposition_paths = sorted(directory.glob("*.dispositions.jsonl")) if directory.is_dir() else []
     if not candidate_paths or not disposition_paths:
         raise ValueError("extraction worker parts are missing")
     candidates: list[dict[str, Any]] = []
@@ -263,6 +296,9 @@ def reduce_extraction_parts(root: Path) -> dict[str, Any]:
             "evidence_paths": evidence,
             "output_ids": outputs,
         })
+    triaged_out = [row for row in excluded_dispositions(root) if row["input_id"] not in grouped]
+    aggregate.extend(triaged_out)
+    duplicates = _mark_duplicates(root, candidates)
     atomic_write_jsonl(root / "tools/candidates/all.jsonl", candidates)
     atomic_write_jsonl(root / "tools/outputs/extraction-dispositions.jsonl", aggregate)
     return {
@@ -272,7 +308,36 @@ def reduce_extraction_parts(root: Path) -> dict[str, Any]:
         "candidates": len(candidates),
         "slice_dispositions": len(dispositions),
         "dispositions": len(aggregate),
+        "excluded_by_triage": len(triaged_out),
+        "duplicates_marked": duplicates,
     }
+
+
+def _mark_duplicates(root: Path, candidates: list[dict[str, Any]]) -> int:
+    """Mark candidates that repeat a filed fact or an earlier candidate (same source,
+    normalized claim, and normalized quote) with `duplicate_of`, so passes over the same text need no cross-checking."""
+    filed: dict[tuple[str, str, str], str] = {}
+    filed_candidates: set[str] = set()
+    paths = sorted((root / "02-facts").glob("*.md"))
+    for fact in fact_tables.load_fact_tables(paths) if paths else []:
+        filed.setdefault(fact_key(fact.get("source_id", ""), fact.get("claim", ""), fact.get("verbatim_quote", "")), str(fact.get("fact_id", "")))
+        filed_candidates.update(re.findall(r"CAND-[A-Z0-9]+-\d+", " ".join(str(value) for value in fact.values())))
+    seen: dict[tuple[str, str, str], str] = {}
+    marked = 0
+    for row in candidates:
+        identifier = str(row.get("candidate_id", row.get("id", "")))
+        row.pop("duplicate_of", None)
+        key = fact_key(row.get("source_id", ""), row.get("claim", ""), row.get("quote", ""))
+        if not all(key) or identifier in filed_candidates:
+            seen.setdefault(key, identifier)
+            continue
+        original = filed.get(key) or seen.get(key)
+        if original:
+            row["duplicate_of"] = original
+            marked += 1
+        else:
+            seen[key] = identifier
+    return marked
 
 
 def _write_csv(path: Path, fields: tuple[str, ...], rows: list[dict[str, str]]) -> None:

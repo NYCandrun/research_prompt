@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 from hashlib import sha256
 import re
@@ -11,7 +12,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Iterable
 
-from research_control import FAIL, PASS, UNKNOWN
+from research_control import FAIL, PASS, UNKNOWN, citation_build
 from research_control.diagram_contract import DIAGRAM_CAPTIONS, DIAGRAM_MODEL_JSON, DIAGRAM_SPECS, FINAL_ARTIFACTS
 from research_control.gates.phase_gate import check_phase_gate
 from research_control.hashing import checker_version, hash_patterns, hash_path, report_inputs_current
@@ -27,21 +28,15 @@ from research_control.io import (
 from research_control.orchestration import ACTIVE_PATH, all_task_definitions, load_state, set_phase_result
 from research_control.reconciliation.assignments import reconcile_records, validate_ledger
 from research_control.reporting import make_validation_report
-from research_control.validators import brand, citations, dates, diagrams, exhibits, facts, quotes, sources, tags, visual_records, writing_rules
+from research_control.validators import american, brand, citations, dates, diagrams, exhibits, facts, quotes, sources, tags, visual_records, writing_rules
 
 
-FACT_ID = re.compile(r"\b[A-Z][A-Z0-9-]*-[A-Z]*\d+[a-z]?\b")
-BRITISH_FORMS = {
-    "organisation": "organization",
-    "organisations": "organizations",
-    "prioritise": "prioritize",
-    "prioritised": "prioritized",
-    "analyse": "analyze",
-    "analysed": "analyzed",
-    "behaviour": "behavior",
-    "colour": "color",
-    "centre": "center",
-}
+# Fact IDs end in at least three digits (zero-padded), so "GPT-4o", "SOC-2" and "AIUC-1" are not IDs.
+FACT_ID = re.compile(r"\b[A-Z][A-Z0-9-]*-[A-Z]*\d{3,}[a-z]?\b")
+VERDICT_INPUTS = [
+    "tools/outputs/verification-verdicts.jsonl",
+    "tools/outputs/verification-verdicts-added.jsonl",
+]
 
 
 def _report(
@@ -78,6 +73,8 @@ def _write(root: Path, relative: str, report: dict[str, Any]) -> dict[str, Any]:
 def _validation_engine_key(root: Path) -> str:
     values = hash_patterns(root, [
         "research_control/checks.py",
+        "research_control/verification.py",
+        "research_control/verification_sandbox.py",
         "research_control/validators/*.py",
         "research_control/reconciliation/*.py",
         "research_control/reporting/*.py",
@@ -134,12 +131,21 @@ def _fact_records(root: Path) -> list[dict[str, str]]:
     return facts.load_fact_tables(_paths(root, ["02-facts/*.md", "04-competitors/*/02-facts/*.md"]))
 
 
-def _source_paths(root: Path, manifest: list[dict[str, str]]) -> dict[str, Path]:
-    result: dict[str, Path] = {}
+TEXT_DERIVATIVE_SUFFIXES = {".txt", ".md", ".json", ".jsonl", ".csv", ".xml"}
+
+
+def _source_paths(root: Path, manifest: list[dict[str, str]]) -> dict[str, list[Path]]:
+    """Map each source to its canonical text derivatives (page text, PDF text, transcript).
+
+    Quotes are checked against what extraction read, not raw HTML or binaries.
+    A source with no text derivative falls back to its first local file.
+    """
+    result: dict[str, list[Path]] = {}
     for row in manifest:
-        local = next((item.strip() for item in row.get("local file", "").split(";") if item.strip()), "")
-        if local:
-            result[row.get("id", "")] = root / local
+        locals_ = [item.strip() for item in row.get("local file", "").split(";") if item.strip()]
+        texts = [root / item for item in locals_ if Path(item).suffix.casefold() in TEXT_DERIVATIVE_SUFFIXES]
+        if texts or locals_:
+            result[row.get("id", "")] = texts or [root / locals_[0]]
     return result
 
 
@@ -186,6 +192,8 @@ def _validate_scope(root: Path) -> dict[str, Any]:
         for heading in ("source", "compet", "input"):
             if heading not in text.casefold():
                 failures.append(f"scope does not address {heading} coverage")
+        if not re.search(r"\bQ1\b", text):
+            failures.append("scope does not number its research questions (Q1, Q2, ...)")
     return _report(root, "scope_contract", ["00-scope.md", "tools/outputs/run-state.json"], 1, 0 if unknowns else 1, failures, unknowns)
 
 
@@ -207,21 +215,53 @@ def _ledger(root: Path, task_types: set[str] | None = None) -> dict[str, Any]:
 def _validate_synthesis_ids(root: Path, checker: str) -> dict[str, Any]:
     paths = _paths(root, ["05-synthesis/*.md"])
     known = {row.get("fact_id", "") for row in _fact_records(root)}
+    withdrawn = facts.withdrawn_facts(root)
+    prefixes = {fact_id.rsplit("-", 1)[0] for fact_id in known if "-" in fact_id}
     failures: list[str] = []
     found: set[str] = set()
     for path in paths:
         for fact_id in FACT_ID.findall(path.read_text(encoding="utf-8", errors="replace")):
             found.add(fact_id)
             if fact_id not in known:
-                failures.append(f"{path.relative_to(root)}: unknown fact ID {fact_id}")
+                # A name shaped like an ID (a standard such as AIUC-1) is not a citation
+                # unless its prefix is one the fact store uses.
+                if fact_id.rsplit("-", 1)[0] in prefixes:
+                    failures.append(f"{path.relative_to(root)}: unknown fact ID {fact_id}")
+            elif fact_id in withdrawn:
+                failures.append(f"{path.relative_to(root)}: cites withdrawn fact {fact_id} ({withdrawn[fact_id]})")
     unknowns = [] if found else ["no fact IDs found in synthesis Markdown"]
     patterns = [str(path.relative_to(root)) for path in paths] + ["02-facts/*.md"]
     return _report(root, checker, patterns, len(paths), len(paths), failures, unknowns, {"fact_ids": len(found)})
 
 
+def _extraction_dispositions(root: Path) -> list[dict[str, Any]]:
+    """Each source's extraction outcome: the merged extraction record, then sources triage left
+    out since, then sources whose every chunk is held for a later pass (recorded, with the reason)."""
+    from research_control.supplement import base_source, deferred_slices
+    from research_control.triage import excluded_dispositions
+
+    rows = _records(root, "tools/outputs/extraction-dispositions.jsonl")
+    covered = {str(row.get("input_id")) for row in rows}
+    for row in excluded_dispositions(root):
+        if row["input_id"] not in covered:
+            rows.append(row)
+            covered.add(row["input_id"])
+    held: dict[str, str] = {}
+    for slice_id, entry in deferred_slices(root).items():
+        source_id = base_source(slice_id)
+        if source_id not in covered:
+            held.setdefault(source_id, str(entry.get("reason") or "deferred"))
+    rows += [{"assignment_id": "facts.dynamic-extraction", "input_id": source_id, "disposition": "deferred",
+              "reason": f"held for a later pass: {reason}", "evidence_paths": ["tools/lists/deferred-slices.json"],
+              "output_ids": []} for source_id, reason in sorted(held.items())]
+    return rows
+
+
 def _verification_records(root: Path) -> list[dict[str, Any]]:
-    path = root / "tools/outputs/verification-verdicts.jsonl"
-    return load_jsonl(path) if path.is_file() and path.stat().st_size else []
+    # The verification phase's verdicts and those added in a sandbox for facts cited later.
+    from research_control.verification_sandbox import verdict_rows
+
+    return verdict_rows(root)
 
 
 def _validate_verdicts(root: Path, checker: str) -> dict[str, Any]:
@@ -243,7 +283,7 @@ def _validate_verdicts(root: Path, checker: str) -> dict[str, Any]:
         if not row.get("evidence_paths"):
             failures.append(f"{fact_id or index}: missing evidence paths")
     unknowns = [] if records else ["verification verdict file is missing or empty"]
-    return _report(root, checker, ["tools/outputs/verification-verdicts.jsonl", "tools/lists/cited-facts.txt"], len(records) or 1, len(records), failures, unknowns)
+    return _report(root, checker, [*VERDICT_INPUTS, "tools/lists/cited-facts.txt"], len(records) or 1, len(records), failures, unknowns)
 
 
 def _review_findings(root: Path) -> list[dict[str, Any]]:
@@ -393,13 +433,9 @@ def _validate_reader_facing(root: Path) -> dict[str, Any]:
 
 def _validate_american_english(root: Path) -> dict[str, Any]:
     paths = _paths(root, ["05-synthesis/company-brief.md", DIAGRAM_CAPTIONS])
-    failures: list[str] = []
-    for path in paths:
-        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            unquoted = writing_rules.unquoted(line)
-            for british, american in BRITISH_FORMS.items():
-                if re.search(rf"\b{british}\b", unquoted, re.IGNORECASE):
-                    failures.append(f"{path.relative_to(root)}:{number}: use {american} instead of {british}")
+    # The report, its captions, and the text drawn in each diagram: spelling and vocabulary.
+    readable = [*paths, *(root / spec["path"] for spec in DIAGRAM_SPECS if (root / spec["path"]).is_file())]
+    failures = american.check_paths(root, [str(path.relative_to(root)) for path in readable], limit=200)
     unknowns = [] if len(paths) == 2 else ["company brief or diagram captions are incomplete"]
     return _report(root, "american_english", [str(path.relative_to(root)) for path in paths], 2, len(paths), failures, unknowns)
 
@@ -434,10 +470,29 @@ def _validate_citations(root: Path) -> dict[str, Any]:
         slug = path.stem.removeprefix("citation-map-")
         markdown_path = root / f"05-synthesis/{slug}.md"
         html_path = root / f"07-final-report/{slug}.html"
-        expected_numbers = [int(item.get("n")) for item in data.get("citations", []) if isinstance(item.get("n"), int)]
+        expected = [(int(item["n"]), str(item.get("link") or "")) for item in data.get("citations", []) if isinstance(item.get("n"), int)]
         if not markdown_path.is_file() or not html_path.is_file():
             failures.append(f"{path.name}: corresponding Markdown or HTML artifact is missing")
+        elif data.get("built_by") == "research_control.citation_build":
+            # The map is built from the fact IDs in the Markdown: rebuilt now, it must be unchanged.
+            rebuilt = citation_build.build(root, write=False)["map"]["citations"]
+            if [(item["n"], item["facts"], item["link"]) for item in rebuilt] != [
+                    (item["n"], item.get("facts"), item.get("link")) for item in data.get("citations", [])]:
+                failures.append(f"{path.name}: the map no longer matches the fact IDs in the Markdown; run `work check` to rebuild it")
+            links = load_jsonl(root / "tools/outputs/fact-links.jsonl") if (root / "tools/outputs/fact-links.jsonl").is_file() else []
+            located = {row["fact_id"]: row["deep_link"] for row in links if row.get("located") and row.get("deep_link")}
+            for item in data.get("citations", []):
+                deep = [located[fact] for fact in item.get("facts", []) if fact in located]
+                if deep and item.get("link") not in deep:
+                    failures.append(f"{path.name}: citation {item['n']} does not link to its fact's deep link")
+            page_text = html_path.read_text(encoding="utf-8", errors="replace")
+            rendered = [(int(number), html.unescape(link)) for number, link in re.findall(
+                r'<a id="cite-[^"]*" href="#note-\d+" data-cite="(\d+)" data-link="([^"]*)"', page_text)]
+            if rendered != expected:
+                failures.append(f"{path.name}: the page's superscript citations {len(rendered)} do not match the map's {len(expected)} "
+                                "(numbers or deep links differ); rebuild the page")
         else:
+            expected_numbers = [number for number, _link in expected]
             markdown_numbers = _citation_numbers(markdown_path.read_text(encoding="utf-8", errors="replace"))
             html_numbers = _citation_numbers(re.sub(r"<[^>]+>", " ", html_path.read_text(encoding="utf-8", errors="replace")))
             if markdown_numbers != expected_numbers:
@@ -471,7 +526,7 @@ def _validate_final_cited_facts(root: Path) -> dict[str, Any]:
         if row.get("verdict") in {"confirmed", "corrected"}
     }
     missing = sorted(cited - verified)
-    return _report(root, "new_cited_fact_verification", ["tools/outputs/citation-map-*.json", DIAGRAM_MODEL_JSON, "tools/outputs/verification-verdicts.jsonl"], len(cited), len(cited & verified), [f"published fact lacks accepted verification: {item}" for item in missing])
+    return _report(root, "new_cited_fact_verification", ["tools/outputs/citation-map-*.json", DIAGRAM_MODEL_JSON, *VERDICT_INPUTS], len(cited), len(cited & verified), [f"published fact lacks accepted verification: {item}" for item in missing])
 
 
 def _validate_exhibits(root: Path) -> dict[str, Any]:
@@ -582,6 +637,8 @@ def run_validator(root: Path, phase: dict[str, Any], validator_id: str) -> dict[
             return _report(root, validator_id, fact_patterns, 1, 0, unknowns=["no fact records found"])
         return _rename(facts.validate_records(fact_rows, root, source_ids, fact_patterns), validator_id)
     if validator_id == "fact_quotes":
+        withdrawn = facts.withdrawn_facts(root)
+        fact_rows = [row for row in fact_rows if row.get("fact_id") not in withdrawn]
         return quotes.validate(fact_rows, _source_paths(root, manifest), root, fact_patterns) if fact_rows else _report(root, validator_id, fact_patterns, 1, 0, unknowns=["no fact records found"])
     if validator_id == "fact_dates":
         source_dates = {row.get("id", ""): row.get("date published", "") for row in manifest if row.get("date published")}
@@ -617,12 +674,14 @@ def run_validator(root: Path, phase: dict[str, Any], validator_id: str) -> dict[
             for row in _verification_records(root)
             if row.get("verdict") in {"confirmed", "corrected"}
         }
-        return diagrams.validate_models(
+        report = diagrams.validate_models(
             root,
             {str(row.get("fact_id")) for row in fact_rows},
             source_ids,
             verified,
         )
+        report["input_hashes"].update(hash_patterns(root, VERDICT_INPUTS))
+        return report
     if validator_id in {"brand_capture_artifacts", "brand_artifacts"}:
         return _rename(brand.validate_artifacts(root), validator_id)
     if validator_id == "brand_visual_records":
@@ -697,10 +756,12 @@ def run_reconciliation(root: Path, phase: dict[str, Any], reconciliation_id: str
         return reconcile_records(
             reconciliation_id=reconciliation_id,
             assigned_ids=manifest_ids,
-            dispositions=_records(root, "tools/outputs/extraction-dispositions.jsonl"),
+            dispositions=_extraction_dispositions(root),
             root=root,
-            input_patterns=["01-sources/MANIFEST.csv", "tools/outputs/extraction-dispositions.jsonl"],
+            input_patterns=["01-sources/MANIFEST.csv", "tools/outputs/extraction-dispositions.jsonl",
+                            "tools/lists/deferred-slices.json"],
             allow_one_to_many=True,
+            allowed_dispositions={"completed", "completed_zero", "duplicate", "excluded", "blocked", "rejected", "deferred"},
         )
     if reconciliation_id == "candidate_filing":
         candidates = _records(root, "tools/candidates/all.jsonl")
@@ -718,11 +779,11 @@ def run_reconciliation(root: Path, phase: dict[str, Any], reconciliation_id: str
     if reconciliation_id == "cited_fact_verification":
         assigned = _ids_from_text(root / "tools/lists/cited-facts.txt")
         completed = [str(row.get("fact_id", "")) for row in _verification_records(root)]
-        return _coverage_reconciliation(root, reconciliation_id, assigned, completed, ["tools/lists/cited-facts.txt", "tools/outputs/verification-verdicts.jsonl"])
+        return _coverage_reconciliation(root, reconciliation_id, assigned, completed, ["tools/lists/cited-facts.txt", *VERDICT_INPUTS])
     if reconciliation_id == "verification_corrections":
         assigned = [str(row.get("fact_id", "")) for row in _verification_records(root)]
         completed = [str(row.get("fact_id", row.get("input_id", ""))) for row in _records(root, "tools/outputs/verification-corrections.jsonl")]
-        return _coverage_reconciliation(root, reconciliation_id, assigned, completed, ["tools/outputs/verification-verdicts.jsonl", "tools/outputs/verification-corrections.jsonl"])
+        return _coverage_reconciliation(root, reconciliation_id, assigned, completed, [*VERDICT_INPUTS, "tools/outputs/verification-corrections.jsonl"])
     if reconciliation_id == "review_findings":
         assigned = [str(row.get("finding_id", "")) for row in _review_findings(root) if row.get("finding_id")]
         completed = [str(row.get("finding_id", row.get("input_id", ""))) for row in _records(root, "tools/outputs/review-decisions.jsonl")]
@@ -739,7 +800,7 @@ def run_reconciliation(root: Path, phase: dict[str, Any], reconciliation_id: str
                 for fact_id in record.get("fact_ids", [])
             })
         completed = [str(row.get("fact_id", "")) for row in _verification_records(root) if row.get("verdict") in {"confirmed", "corrected"}]
-        return _coverage_reconciliation(root, reconciliation_id, assigned, completed, ["tools/outputs/citation-map-*.json", DIAGRAM_MODEL_JSON, "tools/outputs/verification-verdicts.jsonl"])
+        return _coverage_reconciliation(root, reconciliation_id, assigned, completed, ["tools/outputs/citation-map-*.json", DIAGRAM_MODEL_JSON, *VERDICT_INPUTS])
     if reconciliation_id == "citation_sources":
         assigned = sorted({str(note.get("source_id")) for _path, data in _citation_maps(root) for note in data.get("notes", []) if note.get("source_id")})
         model_path = root / DIAGRAM_MODEL_JSON
@@ -781,7 +842,7 @@ def _task_failures(root: Path, phase_id: str) -> tuple[list[str], list[str]]:
         ]
         unknowns = [
             f"task incomplete: {task['task_id']} ({task['state']})"
-            for task in tasks if task["state"] not in {"succeeded", "failed", "blocked", "cancelled"}
+            for task in tasks if task["state"] not in {"succeeded", "superseded", "failed", "blocked", "cancelled"}
         ]
         if not tasks and phase_id not in {"bootstrap", "release_acceptance"}:
             unknowns.append(f"adaptive planner registered no work for phase {phase_id}")

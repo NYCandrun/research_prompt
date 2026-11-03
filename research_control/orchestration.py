@@ -121,6 +121,12 @@ def append_history(root: Path, event: str, details: str) -> None:
 def _ensure_git(root: Path) -> None:
     if (root / ".git").exists():
         return
+    inside = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"], cwd=root, text=True, capture_output=True
+    )
+    if inside.returncode == 0 and inside.stdout.strip() == "true":
+        # A run directory inside the template checkout is versioned by that repository.
+        return
     result = subprocess.run(["git", "init"], cwd=root, text=True, capture_output=True)
     if result.returncode != 0:
         raise RuntimeError(f"could not initialize git: {result.stderr.strip()}")
@@ -180,6 +186,29 @@ def current_phase(root: Path, state: dict[str, Any] | None = None) -> str | None
         if state["phases"][phase_id]["status"] != "complete":
             return phase_id
     return None
+
+
+def reopen_phase(root: Path, phase_id: str, reason: str) -> None:
+    """Return a completed phase to ready when its work is no longer current.
+
+    Completed later phases reopen too, so the run passes through each again:
+    the planner re-plans it against the changed upstream work, and a phase
+    whose work is still current simply passes its gate again.
+    """
+    state = load_state(root)
+    record = state["phases"][phase_id]
+    if record["status"] != "complete":
+        return
+    record["status"] = "ready"
+    record.pop("completed_at", None)
+    order = phase_order(root)
+    later = [item for item in order[order.index(phase_id) + 1:] if state["phases"][item]["status"] == "complete"]
+    for item in later:
+        state["phases"][item]["status"] = "pending"
+        state["phases"][item].pop("completed_at", None)
+    state["status"] = "running"
+    save_state(root, state)
+    append_history(root, "phase-reopened", f"{phase_id}: {reason}" + (f"; later phases reopened: {', '.join(later)}" if later else ""))
 
 
 def set_phase_result(root: Path, phase_id: str, status: str, report: str) -> dict[str, Any]:
@@ -262,7 +291,7 @@ def _read_prompt(root: Path, relative: str) -> str:
 
 def _write_packet(root: Path, phase: dict[str, Any], task: dict[str, Any]) -> tuple[Path, Path]:
     task_id = f"{phase['id']}.{task['id']}"
-    route = model_route(root, task["task_type"])
+    route = model_route(root, task["task_type"], task.get("metadata"))
     packet = {
         "schema_version": "1.0.0",
         "task_id": task_id,

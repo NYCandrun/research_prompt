@@ -15,9 +15,6 @@
   "global": {
     "fail_closed": true,
     "ledger": "tools/outputs/worker-ledger.jsonl",
-    "research_playbook": "RESEARCH_PLAYBOOK.md",
-    "workaround_log": "tools/outputs/workarounds.jsonl",
-    "workaround_report": "RESEARCH_WORKAROUNDS.md",
     "gate_directory": "tools/outputs/gates",
     "reconciliation_directory": "tools/outputs/reconciliation",
     "validation_directory": "tools/outputs/validations",
@@ -54,8 +51,9 @@
     "database": "tools/outputs/runtime.sqlite3",
     "event_log": "tools/outputs/runtime-events.jsonl",
     "planner": "corpus_driven",
-    "completion_basis": "channel_saturation_not_source_count",
+    "completion_basis": "question_sufficiency_or_saturation_not_source_count",
     "scheduler": {
+      "concurrency_policy": "defaults only; the orchestrator tunes agent and runtime concurrency to whatever is most efficient in the current environment",
       "global_concurrency": 12,
       "per_host_concurrency": 2,
       "lease_seconds": 1800,
@@ -63,7 +61,10 @@
       "expired_lease_action": "targeted_retry"
     },
     "discovery": {
-      "required_channels": ["company_site", "sitemaps", "newsroom_blog", "docs_help", "careers", "video", "podcasts", "social", "code_packages", "independent_web"],
+      "required_channels": ["company_site", "sitemaps", "newsroom_blog", "docs_help", "careers", "video", "podcasts", "social", "code_packages", "independent_web", "market_competitors"],
+      "first_party": "runtime crawl of the company host and its sitemaps to a fixed point",
+      "search_channels": "close as sufficient when the admitted sources answer the named research questions, or saturated after repeated empty passes",
+      "lead_only_hosts": "login-walled platforms are recorded as leads with provenance and are not captured",
       "saturation_empty_passes": 2,
       "min_host_interval_seconds": 1.0,
       "safety_circuit_breakers": {
@@ -83,6 +84,12 @@
       "optional": true,
       "fallback": "use_available_model",
       "default_tier": "strong",
+      "extraction_tiers": {
+        "repository": "standard",
+        "business_records": "strong",
+        "recording": "strong",
+        "page": "strong"
+      },
       "tiers": {
         "economy": {
           "model_class": "faster_capable",
@@ -92,16 +99,23 @@
         "standard": {
           "model_class": "balanced_capable",
           "effort": "medium",
-          "task_types": ["source_discovery", "filing", "language_review"]
+          "task_types": ["source_discovery", "alternate_copies", "triage", "retriage", "filing", "filing_review", "language_review"]
         },
         "strong": {
-          "model_class": "strongest_available",
+          "model_class": "flagship_capable",
           "effort": "high",
           "task_types": []
+        },
+        "frontier": {
+          "model_class": "strongest_available",
+          "effort": "high",
+          "task_types": ["findings", "verification", "devils_advocate", "diagram_modeler"]
         }
       }
     },
-    "worker_outputs": "isolated_parts_then_single_writer_reducer"
+    "worker_outputs": "isolated_parts_then_single_writer_reducer",
+    "runtime_executed_task_types": ["first-party discovery", "capture", "discovery_reducer", "capture_reducer", "extraction_reducer", "filing", "claim_digests", "supplement_reducer"],
+    "early_dispatch": "a task marked dispatch=early starts as soon as its own dependencies are met; its phase gate still requires it"
   },
   "execution_profiles": {
     "bootstrap": {"automatic": true, "tasks": []},
@@ -128,29 +142,29 @@
           "outputs": ["01-sources/MANIFEST.csv", "01-sources/publish-dates.csv", "01-sources/BLOCKED.md", "06-checks/coverage.md", "tools/lists/extraction-scope.csv", "tools/outputs/capture-dispositions.jsonl"],
           "independent": false,
           "exclusive_inputs": true
-        },
-        {
-          "id": "brand-guide",
-          "task_type": "brand_guide",
-          "prompt": "prompts/phases/brand-guide.md",
-          "cores": ["prompts/core/runtime.md"],
-          "inputs": [
-            {"id": "company_url", "kind": "runtime_value", "required": true},
-            {"id": "scope_map", "path": "00-scope.md", "required": true}
-          ],
-          "outputs": ["07-final-report/brand-guide.html", "07-final-report/brand-guide.pdf", "05-synthesis/brand-guide/evidence/source-map.md", "05-synthesis/brand-guide/evidence/design-observations.md", "05-synthesis/brand-guide/evidence/asset-manifest.csv", "05-synthesis/brand-guide/evidence/screenshots", "05-synthesis/brand-guide/evidence/acceptance-check.md"],
-          "independent": true,
-          "exclusive_inputs": false,
-          "track_input_staleness": true,
-          "validators": ["brand_capture_artifacts"]
         }
       ]
     },
     "facts": {
       "tasks": [
         {
+          "id": "triage",
+          "task_type": "triage",
+          "prompt": "prompts/phases/triage.md",
+          "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
+          "inputs": [
+            {"id": "scope_map", "path": "00-scope.md", "required": true},
+            {"id": "triage_index", "path": "tools/lists/triage-index.jsonl", "required": true},
+            {"id": "source_manifest", "path": "01-sources/MANIFEST.csv", "required": true}
+          ],
+          "outputs": ["tools/lists/extraction-triage.jsonl"],
+          "independent": true,
+          "exclusive_inputs": true
+        },
+        {
           "id": "extract",
           "task_type": "extraction",
+          "depends_on": ["triage"],
           "prompt": "prompts/phases/extraction.md",
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
           "outputs": ["tools/candidates/all.jsonl", "tools/outputs/extraction-dispositions.jsonl"],
@@ -163,8 +177,20 @@
           "prompt": "prompts/phases/filing.md",
           "depends_on": ["extract"],
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
-          "outputs": ["02-facts/*.md", "tools/outputs/filing-dispositions.jsonl", "06-checks/script-audits.md", "06-checks/duplicate-spot-check.md", "06-checks/filter-spot-check.md"],
+          "outputs": ["02-facts/*.md", "tools/outputs/filing-dispositions.jsonl", "06-checks/script-audits.md", "tools/outputs/filing-spot-sample.json"],
           "independent": false,
+          "exclusive_inputs": false,
+          "metadata": {"single_writer": true, "executor": "runtime"}
+        },
+        {
+          "id": "filing-spot-check",
+          "task_type": "filing_review",
+          "prompt": "prompts/phases/filing-spot-check.md",
+          "depends_on": ["file-facts"],
+          "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
+          "inputs": [{"id": "spot_sample", "path": "tools/outputs/filing-spot-sample.json", "required": true}],
+          "outputs": ["06-checks/duplicate-spot-check.md", "06-checks/filter-spot-check.md"],
+          "independent": true,
           "exclusive_inputs": false
         }
       ]
@@ -172,13 +198,46 @@
     "initial_synthesis": {
       "tasks": [
         {
-          "id": "synthesize",
-          "task_type": "synthesis",
-          "prompt": "prompts/phases/synthesis.md",
-          "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"],
-          "outputs": ["tools/digests/*.md", "03-timelines/*.md", "tools/outputs/currency.csv", "05-synthesis/{product-map,offering,customers-proof,competitors,glossary,messaging-timeline,organization,direction,open-questions}.md", "06-checks/currency-review.md"],
+          "id": "claim-digests",
+          "task_type": "claim_digests",
+          "prompt": "prompts/core/runtime.md",
+          "inputs": [{"id": "fact_store", "path": "02-facts/*.md", "required": true}],
+          "outputs": ["tools/digests/*.md"],
           "independent": false,
-          "exclusive_inputs": true
+          "exclusive_inputs": false,
+          "metadata": {"planner": "static-profile", "single_writer": true, "executor": "runtime"}
+        },
+        {
+          "id": "groundwork",
+          "task_type": "synthesis",
+          "depends_on": ["claim-digests"],
+          "prompt": "prompts/phases/synthesis-groundwork.md",
+          "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"],
+          "inputs": [{"id": "claim_digests", "path": "tools/digests/*.md", "required": true}, {"id": "fact_store", "path": "02-facts/*.md", "required": true}, {"id": "scope_map", "path": "00-scope.md", "required": true}],
+          "outputs": ["03-timelines/*.md", "tools/outputs/currency.csv"],
+          "independent": false,
+          "exclusive_inputs": true,
+          "track_input_staleness": true
+        },
+        {"id": "write-product-map", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/product-map.md"], "independent": true, "exclusive_inputs": false},
+        {"id": "write-offering", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/offering.md"], "independent": true, "exclusive_inputs": false},
+        {"id": "write-customers-proof", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/customers-proof.md"], "independent": true, "exclusive_inputs": false},
+        {"id": "write-competitors", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/competitors.md"], "independent": true, "exclusive_inputs": false},
+        {"id": "write-glossary", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/glossary.md"], "independent": true, "exclusive_inputs": false},
+        {"id": "write-messaging-timeline", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/messaging-timeline.md"], "independent": true, "exclusive_inputs": false},
+        {"id": "write-organization", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/organization.md"], "independent": true, "exclusive_inputs": false},
+        {"id": "write-direction", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/direction.md"], "independent": true, "exclusive_inputs": false},
+        {"id": "write-inference-catalogue", "task_type": "synthesis", "depends_on": ["write-product-map", "write-offering", "write-customers-proof", "write-competitors", "write-glossary", "write-messaging-timeline", "write-organization", "write-direction"], "prompt": "prompts/phases/inference-catalogue.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/inference-catalogue.md"], "independent": true, "exclusive_inputs": false},
+        {"id": "write-open-questions", "task_type": "synthesis", "depends_on": ["write-product-map", "write-offering", "write-customers-proof", "write-competitors", "write-glossary", "write-messaging-timeline", "write-organization", "write-direction", "write-inference-catalogue"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/open-questions.md"], "independent": true, "exclusive_inputs": false},
+        {
+          "id": "currency-review",
+          "task_type": "currency_review",
+          "depends_on": ["groundwork"],
+          "prompt": "prompts/phases/currency-review.md",
+          "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
+          "outputs": ["06-checks/currency-review.md"],
+          "independent": true,
+          "exclusive_inputs": false
         }
       ]
     },
@@ -187,6 +246,7 @@
         {
           "id": "verify-cited-facts",
           "task_type": "verification",
+          "fan_out": "The runtime lists cited facts and writes one packet per fact (verification.prepare), groups them by source into shards that independent workers verify (verification.verify.SHARD, one part each), then merges the parts in cited order (verification.reduce-verdicts).",
           "prompt": "prompts/phases/verification.md",
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
           "outputs": ["tools/lists/cited-facts.txt", "tools/outputs/cited-facts/index.json", "06-checks/verification-cited.md", "tools/outputs/verification-verdicts.jsonl"],
@@ -212,8 +272,19 @@
     "review": {
       "tasks": [
         {
+          "id": "relationship-consistency",
+          "task_type": "consistency_check",
+          "prompt": "prompts/core/runtime.md",
+          "inputs": [{"id": "synthesis_files", "path": "05-synthesis/*.md", "required": true}],
+          "outputs": ["06-checks/relationship-consistency.md"],
+          "independent": false,
+          "exclusive_inputs": false,
+          "metadata": {"planner": "static-profile", "single_writer": true, "executor": "runtime"}
+        },
+        {
           "id": "technical",
           "task_type": "technical_review",
+          "depends_on": ["relationship-consistency"],
           "prompt": "prompts/phases/review-technical.md",
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
           "outputs": ["06-checks/review-technical.md", "tools/outputs/review-findings-technical.jsonl"],
@@ -223,6 +294,7 @@
         {
           "id": "devils-advocate",
           "task_type": "devils_advocate",
+          "depends_on": ["relationship-consistency"],
           "prompt": "prompts/phases/review-devils-advocate.md",
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
           "outputs": ["06-checks/review-devils-advocate.md", "tools/outputs/review-findings-devils-advocate.jsonl"],
@@ -232,6 +304,7 @@
         {
           "id": "insider",
           "task_type": "insider_review",
+          "depends_on": ["relationship-consistency"],
           "prompt": "prompts/phases/review-insider.md",
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
           "outputs": ["06-checks/review-insider.md", "tools/outputs/review-findings-insider.jsonl"],
@@ -241,6 +314,7 @@
         {
           "id": "editor",
           "task_type": "editor_review",
+          "depends_on": ["relationship-consistency"],
           "prompt": "prompts/phases/review-editor.md",
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"],
           "outputs": ["06-checks/review-editor.md", "tools/outputs/review-findings-editor.jsonl"],
@@ -251,9 +325,9 @@
           "id": "apply-review",
           "task_type": "fixer",
           "prompt": "prompts/phases/fixer.md",
-          "depends_on": ["technical", "devils-advocate", "insider", "editor"],
+          "depends_on": ["relationship-consistency", "technical", "devils-advocate", "insider", "editor"],
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"],
-          "outputs": ["05-synthesis/{product-map,offering,customers-proof,competitors,glossary,messaging-timeline,organization,direction,open-questions}.md", "06-checks/review-decisions.md", "tools/outputs/review-decisions.jsonl"],
+          "outputs": ["05-synthesis/{product-map,offering,customers-proof,competitors,glossary,messaging-timeline,organization,direction,inference-catalogue,open-questions}.md", "06-checks/review-decisions.md", "tools/outputs/review-decisions.jsonl"],
           "independent": true,
           "exclusive_inputs": true,
           "output_mode": "revise"
@@ -263,17 +337,66 @@
     "final": {
       "tasks": [
         {
+          "id": "brand-guide",
+          "task_type": "brand_guide",
+          "prompt": "prompts/phases/brand-guide.md",
+          "cores": ["prompts/core/runtime.md"],
+          "inputs": [
+            {"id": "company_url", "kind": "runtime_value", "required": true},
+            {"id": "scope_map", "path": "00-scope.md", "required": true}
+          ],
+          "outputs": ["07-final-report/brand-guide.html", "07-final-report/brand-guide.pdf", "05-synthesis/brand-guide/evidence/source-map.md", "05-synthesis/brand-guide/evidence/design-observations.md", "05-synthesis/brand-guide/evidence/asset-manifest.csv", "05-synthesis/brand-guide/evidence/screenshots", "05-synthesis/brand-guide/evidence/acceptance-check.md"],
+          "independent": true,
+          "exclusive_inputs": false,
+          "track_input_staleness": true,
+          "priority": 5,
+          "validators": ["brand_capture_artifacts"],
+          "metadata": {"dispatch": "early", "schedule": "starts with capture and runs alongside research", "factual_scope": "presentation_only"}
+        },
+        {
+          "id": "report-outline",
+          "task_type": "report_outline",
+          "prompt": "prompts/core/runtime.md",
+          "inputs": [{"id": "scope_map", "path": "00-scope.md", "required": true}],
+          "outputs": ["tools/lists/report-outline.json"],
+          "independent": false,
+          "exclusive_inputs": false,
+          "metadata": {"planner": "static-profile", "single_writer": true, "executor": "runtime"}
+        },
+        {
+          "id": "findings",
+          "task_type": "findings",
+          "prompt": "prompts/phases/findings.md",
+          "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"],
+          "inputs": [
+            {"id": "scope_map", "path": "00-scope.md", "required": true},
+            {"id": "report_outline", "path": "tools/lists/report-outline.json", "required": true},
+            {"id": "reviewed_synthesis", "path": "05-synthesis/{product-map,offering,customers-proof,competitors,glossary,messaging-timeline,organization,direction,inference-catalogue,open-questions}.md", "required": true},
+            {"id": "reviewed_timelines", "path": "03-timelines/*.md", "required": false},
+            {"id": "fact_digests", "path": "tools/digests/*.md", "required": true},
+            {"id": "cited_fact_rows", "path": "tools/outputs/cited-fact-rows.md", "required": true},
+            {"id": "review_decisions", "path": "06-checks/review-decisions.md", "required": false}
+          ],
+          "depends_on": ["report-outline"],
+          "outputs": ["05-synthesis/findings.md"],
+          "independent": false,
+          "exclusive_inputs": false,
+          "validators": []
+        },
+        {
           "id": "write-brief",
           "task_type": "brief_writer",
           "prompt": "prompts/phases/brief-writing.md",
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"],
           "inputs": [
+            {"id": "report_outline", "path": "tools/lists/report-outline.json", "required": true},
             {"id": "reviewed_synthesis", "path": "05-synthesis/*.md", "required": true},
-            {"id": "verified_facts", "path": "02-facts/**", "required": true},
+            {"id": "cited_fact_rows", "path": "tools/outputs/cited-fact-rows.md", "required": true},
             {"id": "source_manifest", "path": "01-sources/MANIFEST.csv", "required": true},
             {"id": "verification_verdicts", "path": "tools/outputs/verification-verdicts.jsonl", "required": true},
             {"id": "brand_guide", "path": "07-final-report/brand-guide.html", "required": true}
           ],
+          "depends_on": ["brand-guide", "report-outline", "findings"],
           "outputs": ["05-synthesis/company-brief.md", "05-synthesis/design-notes.md", "05-synthesis/design/style.css", "tools/outputs/citation-map-company-brief.json", "tools/outputs/exhibit-map.json"],
           "independent": false,
           "exclusive_inputs": true,
@@ -286,11 +409,12 @@
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"],
           "inputs": [
             {"id": "reviewed_synthesis", "path": "05-synthesis/*.md", "required": true},
-            {"id": "verified_facts", "path": "02-facts/**", "required": true},
+            {"id": "cited_fact_rows", "path": "tools/outputs/cited-fact-rows.md", "required": true},
             {"id": "source_manifest", "path": "01-sources/MANIFEST.csv", "required": true},
             {"id": "verification_verdicts", "path": "tools/outputs/verification-verdicts.jsonl", "required": true},
             {"id": "reviewed_timelines", "path": "03-timelines/*.md", "required": false}
           ],
+          "depends_on": ["findings"],
           "outputs": ["07-final-report/diagram-models.md", "tools/outputs/diagram-models.json"],
           "independent": true,
           "exclusive_inputs": false,
@@ -300,7 +424,7 @@
           "id": "build-diagrams",
           "task_type": "diagram_builder",
           "prompt": "prompts/phases/diagram-building.md",
-          "depends_on": ["write-brief", "model-diagrams"],
+          "depends_on": ["brand-guide", "write-brief", "model-diagrams"],
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"],
           "inputs": [
             {"id": "diagram_model", "path": "07-final-report/diagram-models.md", "required": true},
@@ -469,9 +593,7 @@
         {"id": "source_manifest", "path": "01-sources/MANIFEST.csv"},
         {"id": "publish_dates", "path": "01-sources/publish-dates.csv"},
         {"id": "blocked_log", "path": "01-sources/BLOCKED.md"},
-        {"id": "coverage", "path": "06-checks/coverage.md"},
-        {"id": "brand_guide", "path": "07-final-report/brand-guide.{html,pdf}"},
-        {"id": "brand_evidence", "path": "05-synthesis/brand-guide/evidence/**"}
+        {"id": "coverage", "path": "06-checks/coverage.md"}
       ],
       "reconciliations": [
         {"id": "capture_sources", "report": "tools/outputs/reconciliation/capture-sources.json"},
@@ -481,23 +603,22 @@
         {"id": "source_records", "report": "tools/outputs/validations/source-records.json", "assurance_layer": "data_integrity"},
         {"id": "source_dates", "report": "tools/outputs/validations/source-dates.json", "assurance_layer": "evidence_validity"},
         {"id": "manifest_files", "report": "tools/outputs/validations/manifest-files.json", "assurance_layer": "data_integrity"},
-        {"id": "capture_workers", "report": "tools/outputs/validations/capture-workers.json", "assurance_layer": "execution_integrity"},
-        {"id": "brand_capture_artifacts", "report": "tools/outputs/validations/brand-capture-artifacts.json", "assurance_layer": "publication_integrity"}
+        {"id": "capture_workers", "report": "tools/outputs/validations/capture-workers.json", "assurance_layer": "execution_integrity"}
       ],
       "semantic_reviews": [
         {"id": "coverage_review", "path": "06-checks/coverage.md", "role": "orchestrator", "independent": false}
       ],
-      "completion": {"require_all": true, "required_worker_task_types": ["capture", "brand_guide"], "state_update_after_gate": true},
-      "stale_if": ["00-scope.md", "01-sources/**", "04-competitors/*/01-sources/**", "05-synthesis/brand-guide/**", "07-final-report/brand-guide.*", "tools/capture*.py", "tools/merge*.py", "research_control/validators/{sources,brand}.py"],
+      "completion": {"require_all": true, "required_worker_task_types": ["capture"], "state_update_after_gate": true},
+      "stale_if": ["00-scope.md", "01-sources/**", "04-competitors/*/01-sources/**", "tools/capture*.py", "tools/merge*.py", "research_control/validators/sources.py"],
       "downstream": ["facts"],
       "retry_policy": "global",
       "gate": {
         "name": "capture",
-        "required_paths": ["01-sources/MANIFEST.csv", "01-sources/publish-dates.csv", "01-sources/BLOCKED.md", "06-checks/coverage.md", "07-final-report/brand-guide.html", "07-final-report/brand-guide.pdf", "05-synthesis/brand-guide/evidence/acceptance-check.md"],
+        "required_paths": ["01-sources/MANIFEST.csv", "01-sources/publish-dates.csv", "01-sources/BLOCKED.md", "06-checks/coverage.md"],
         "required_reconciliations": ["capture_sources", "capture_assignments"],
-        "required_validators": ["source_records", "source_dates", "manifest_files", "capture_workers", "brand_capture_artifacts"],
+        "required_validators": ["source_records", "source_dates", "manifest_files", "capture_workers"],
         "required_semantic_reviews": ["coverage_review"],
-        "required_worker_task_types": ["capture", "brand_guide"]
+        "required_worker_task_types": ["capture"]
       }
     },
     {
@@ -554,7 +675,7 @@
         {"id": "currency_file", "path": "tools/outputs/currency.csv", "required": true}
       ],
       "outputs": [
-        {"id": "synthesis_files", "path": "05-synthesis/{product-map,offering,customers-proof,competitors,glossary,messaging-timeline,organization,direction,open-questions}.md"}
+        {"id": "synthesis_files", "path": "05-synthesis/{product-map,offering,customers-proof,competitors,glossary,messaging-timeline,organization,direction,inference-catalogue,open-questions}.md"}
       ],
       "reconciliations": [
         {"id": "synthesis_assignments", "report": "tools/outputs/reconciliation/synthesis-assignments.json"}
@@ -594,7 +715,7 @@
         {"id": "cited_fact_review", "path": "06-checks/verification-cited.md", "role": "verification_reviewer", "independent": true}
       ],
       "completion": {"require_all": true, "required_worker_task_types": ["verification"], "state_update_after_gate": true},
-      "stale_if": ["05-synthesis/{product-map,offering,customers-proof,competitors,glossary,messaging-timeline,organization,direction,open-questions}.md", "02-facts/**", "tools/lists/cited-facts.txt", "tools/outputs/verification-verdicts.jsonl"],
+      "stale_if": ["05-synthesis/{product-map,offering,customers-proof,competitors,glossary,messaging-timeline,organization,direction,inference-catalogue,open-questions}.md", "02-facts/**", "tools/lists/cited-facts.txt", "tools/outputs/verification-verdicts.jsonl"],
       "downstream": ["corrected_synthesis"],
       "retry_policy": "global",
       "gate": {
@@ -662,7 +783,7 @@
         {"id": "editor", "path": "06-checks/review-editor*.md", "role": "editor", "independent": true}
       ],
       "completion": {"require_all": true, "required_worker_task_types": ["technical_review", "devils_advocate", "insider_review", "editor_review", "fixer"], "state_update_after_gate": true},
-      "stale_if": ["05-synthesis/{product-map,offering,customers-proof,competitors,glossary,messaging-timeline,organization,direction,open-questions}.md", "06-checks/review-*.md", "tools/outputs/cited-facts/**"],
+      "stale_if": ["05-synthesis/{product-map,offering,customers-proof,competitors,glossary,messaging-timeline,organization,direction,inference-catalogue,open-questions}.md", "06-checks/review-*.md", "tools/outputs/cited-facts/**"],
       "downstream": ["final"],
       "retry_policy": "global",
       "gate": {
@@ -696,17 +817,20 @@
         {"id": "diagram_style", "path": "07-final-report/diagram-style-spec.md"},
         {"id": "diagram_svgs", "path": "07-final-report/{01-product-capability-map,02-operating-model,03-enterprise-logical-architecture,04-technical-dependency-map}.svg"},
         {"id": "diagram_captions", "path": "07-final-report/diagram-captions.md"},
-        {"id": "design_notes", "path": "05-synthesis/design-notes.md"}
+        {"id": "design_notes", "path": "05-synthesis/design-notes.md"},
+        {"id": "brand_guide", "path": "07-final-report/brand-guide.{html,pdf}"},
+        {"id": "brand_evidence", "path": "05-synthesis/brand-guide/evidence/**"}
       ],
       "reconciliations": [],
       "validators": [
+        {"id": "brand_capture_artifacts", "report": "tools/outputs/validations/brand-capture-artifacts.json", "assurance_layer": "publication_integrity"},
         {"id": "diagram_models", "report": "tools/outputs/validations/diagram-models.json", "assurance_layer": "reasoning_quality"},
         {"id": "diagram_style_spec", "report": "tools/outputs/validations/diagram-style-spec.json", "assurance_layer": "publication_integrity"},
         {"id": "diagram_artifacts", "report": "tools/outputs/validations/diagram-artifacts.json", "assurance_layer": "publication_integrity"}
       ],
       "semantic_reviews": [],
-      "completion": {"require_all": true, "state_update_after_gate": false},
-      "stale_if": ["05-synthesis/**", "02-facts/**", "01-sources/MANIFEST.csv", "tools/brief_html/**", "07-final-report/**"],
+      "completion": {"require_all": true, "required_worker_task_types": ["brand_guide"], "state_update_after_gate": false},
+      "stale_if": ["05-synthesis/**", "02-facts/**", "01-sources/MANIFEST.csv", "tools/brief_html/**", "07-final-report/**", "research_control/validators/brand.py"],
       "downstream": ["publication_checks"],
       "retry_policy": "global"
     },
@@ -771,7 +895,7 @@
         "required_reconciliations": ["final_cited_facts", "citation_sources", "visual_pages", "visual_diagrams"],
         "required_validators": ["final_artifact_contract", "reader_facing_text", "american_english", "new_cited_fact_verification", "citation_structure", "exhibit_mapping", "brand_artifacts", "brand_visual_records", "diagram_models", "diagram_style_spec", "diagram_artifacts", "diagram_visual_records", "design_check", "visual_audit", "visual_records", "publication_decisions", "artifact_binding"],
         "required_semantic_reviews": ["american_english_review", "citation_claim_a", "citation_claim_b", "visual_review", "orchestrator_page_review"],
-        "required_worker_task_types": ["brief_writer", "diagram_modeler", "diagram_builder", "assembler", "language_review", "citation_claim_review", "visual_review", "publication_fixer", "orchestrator_page_review"]
+        "required_worker_task_types": ["findings", "brief_writer", "diagram_modeler", "diagram_builder", "assembler", "language_review", "citation_claim_review", "visual_review", "publication_fixer", "orchestrator_page_review"]
       }
     },
     {

@@ -2,7 +2,9 @@ TASK TYPE: EVIDENCE-BOUNDED ARCHITECTURE MODELING
 
 Research is complete. Do not browse, search, fetch sources, or add outside
 facts. Work only from the packet's reviewed synthesis, verified fact records,
-source manifest, verification results, timelines, and design reference. A
+source manifest, verification results, timelines, and design reference.
+Verified fact records are in `tools/outputs/cited-fact-rows.md`; open `02-facts/`
+only to look up a fact by ID that the table lacks. A
 company name or a familiar industry pattern is not evidence.
 
 Reconstruct the minimum logical architecture necessary to explain documented
@@ -62,3 +64,7 @@ or architectural distinction not already explained by the other views.
 
 Do not draw anything. The scheduler will not release the build task until the
 model registry passes deterministic validation.
+
+Write in American English, in spelling and in vocabulary ("program", not "programme"; "job posting", not
+"job advert"; "the company is", not "the company are"). Quotes, quoted titles, and names keep the
+source's spelling. `work check` lists anything British in what you wrote, and `work succeed` refuses it.

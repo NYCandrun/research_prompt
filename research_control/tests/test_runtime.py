@@ -80,6 +80,48 @@ class RuntimeTests(unittest.TestCase):
                 self.assertEqual("ready", store.task("facts.extract")["state"])
                 self.assertEqual("planned", store.task("facts.reduce")["state"])
 
+    def test_requested_rerun_marks_completed_consumers_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with RuntimeStore(root) as store:
+                store.initialize(run_id="run-3", company_url="https://example.com")
+                store.add_task(item("capture.a", "parts/a.txt"))
+                store.add_task(item("capture.reduce", "parts/reduce.txt", depends_on=["capture.a"]))
+                (root / "parts").mkdir(parents=True)
+                for task_id, filename in (("capture.a", "a.txt"), ("capture.reduce", "reduce.txt")):
+                    store.claim("runtime", task_id=task_id)
+                    store.start(task_id, "runtime")
+                    (root / "parts" / filename).write_text(f"{task_id}\n", encoding="utf-8")
+                    store.complete(task_id, "runtime")
+                store.mark_stale("capture.a", "retry requested")
+                self.assertEqual("ready", store.task("capture.a")["state"])
+                rerun = store.task("capture.a")
+                self.assertEqual(rerun["attempt_count"], rerun["attempt_base"])
+                store.claim("runtime", task_id="capture.a")
+                self.assertEqual(2, store.task("capture.a")["attempt_count"])
+                self.assertEqual("planned", store.task("capture.reduce")["state"])
+
+    def test_a_running_revision_does_not_make_the_finished_owner_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with RuntimeStore(root) as store:
+                store.initialize(run_id="run-4", company_url="https://example.com")
+                store.add_task(item("synthesis.write", "shared/report.md", phase="initial_synthesis", task_type="synthesis"))
+                store.add_task(item(
+                    "synthesis.supplement", "shared/report.md", phase="initial_synthesis",
+                    task_type="synthesis", output_mode="revise",
+                ))
+                (root / "shared").mkdir(parents=True)
+                store.claim("writer", task_id="synthesis.write")
+                store.start("synthesis.write", "writer")
+                (root / "shared/report.md").write_text("first\n", encoding="utf-8")
+                store.complete("synthesis.write", "writer")
+                store.claim("reviser", task_id="synthesis.supplement")
+                store.start("synthesis.supplement", "reviser")
+                (root / "shared/report.md").write_text("first, revised\n", encoding="utf-8")
+                self.assertEqual([], store.invalidate_stale())
+                self.assertEqual("succeeded", store.task("synthesis.write")["state"])
+
     def test_declared_revision_owns_current_shared_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

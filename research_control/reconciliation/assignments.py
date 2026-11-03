@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -91,7 +92,32 @@ def reconcile_records(
     return report
 
 
+def superseded_tasks(root: Path) -> set[str]:
+    """Tasks the scheduler retired; their ledger rows record history, not live ownership."""
+    database = root / "tools/outputs/runtime.sqlite3"
+    if not database.is_file():
+        return set()
+    connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+    try:
+        return {row[0] for row in connection.execute("SELECT task_id FROM tasks WHERE state='superseded'")}
+    finally:
+        connection.close()
+
+
 def validate_ledger(root: Path, records: list[dict[str, Any]], task_types: set[str] | None = None) -> dict[str, Any]:
+    from research_control.supplement import base_source, supplement_sources
+
+    retired = superseded_tasks(root)
+    # A supplemented source is read again by a supplement batch on purpose.
+    supplemented = set(supplement_sources(root))
+    # Work whose results were carried forward (verdicts reused after the synthesis
+    # changed, so its tasks were retired with nothing left to redo) still shows its
+    # kind of work was done.
+    carried = {
+        str(row.get("task_type")) for row in records
+        if str(row.get("task_id", "")) in retired and row.get("exit_status") == 0
+    }
+    records = [row for row in records if str(row.get("task_id", "")) not in retired]
     selected = [row for row in records if task_types is None or row.get("task_type") in task_types]
     final_output_owner: dict[str, tuple[str, str]] = {}
     for row in records:
@@ -106,7 +132,7 @@ def validate_ledger(root: Path, records: list[dict[str, Any]], task_types: set[s
     output_owner: dict[str, tuple[str, str]] = {}
     by_task: dict[str, list[dict[str, Any]]] = defaultdict(list)
     if task_types:
-        represented = {str(row.get("task_type")) for row in selected}
+        represented = {str(row.get("task_type")) for row in selected} | carried
         for missing_type in sorted(task_types - represented):
             unknowns.append(f"no ledger attempts registered for required task type {missing_type}")
 
@@ -129,6 +155,8 @@ def validate_ledger(root: Path, records: list[dict[str, Any]], task_types: set[s
             failures.append(f"{task_id}: attempt must be positive")
         if row.get("exclusive_inputs"):
             for input_id in row.get("input_ids", []):
+                if row.get("task_type") == "extraction" and base_source(input_id) in supplemented:
+                    continue
                 ownership_key = (str(row.get("phase", "")), str(input_id))
                 owner = exclusive_owner.get(ownership_key)
                 if owner is not None and owner != task_id and owner not in row.get("depends_on", []):

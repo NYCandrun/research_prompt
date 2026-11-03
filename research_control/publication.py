@@ -16,7 +16,7 @@ from research_control.diagram_contract import DIAGRAM_SPECS
 from research_control.io import atomic_write_json, atomic_write_text, load_json, utc_now
 
 
-FACT_ID = re.compile(r"(?<![A-Za-z0-9])\[?[A-Z][A-Z0-9-]*-[A-Z]*\d+[a-z]?\]?")
+FACT_ID = re.compile(r"(?<![A-Za-z0-9])\[?[A-Z][A-Z0-9-]*-[A-Z]*\d{3,}[a-z]?\]?")
 DEFAULT_CSS = """
 :root { color-scheme: light; --ink: #17202a; --muted: #5b6573; --accent: #175cd3; --line: #d8dee8; }
 * { box-sizing: border-box; }
@@ -36,6 +36,14 @@ blockquote { margin-left: 0; padding-left: 18px; border-left: 3px solid var(--ac
 .architecture-figures svg { display: block; width: 100%; max-width: 165mm; height: auto; margin: 0 auto; }
 .architecture-figures figcaption { margin: 10px auto 0; max-width: 165mm; color: var(--muted); font-size: 13px; }
 .meta { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+sup.cn { font-size: .7em; line-height: 0; margin-left: 1px; }
+sup.cn a { text-decoration: none; font-weight: 600; }
+ol.source-notes { padding-left: 2.4em; font-size: 13px; }
+ol.source-notes li { margin: 4px 0; max-width: none; overflow-wrap: anywhere; }
+ol.source-notes .grade { display: inline-block; min-width: 1.4em; color: var(--muted); font-weight: 600; }
+ol.source-notes .part { font-weight: 600; }
+ol.source-notes .back { text-decoration: none; margin-left: 4px; }
+sup.cn a:target, ol.source-notes li:target { background: #fff3b0; }
 @media print { body { background: white; } main { width: auto; margin: 0; padding: 36pt 42pt; box-shadow: none; } }
 """.strip()
 
@@ -59,7 +67,74 @@ def _inline(value: str) -> str:
     return value
 
 
-def markdown_to_html(markdown: str, title: str, css: str) -> str:
+CITE = "\x00cite{}\x00"
+SOURCE_LIST = "\x00sources\x00"
+
+
+def _with_citations(markdown: str, citation_map: dict[str, Any]) -> tuple[str, dict[str, str]]:
+    """Swap each fact-ID group for a marker the HTML replaces with linked superscript numbers,
+    and the Sources section's body for a marker the numbered source list replaces."""
+    from research_control.citation_build import GROUP, SOURCES_HEADING
+
+    groups: dict[int, list[dict[str, Any]]] = {}
+    for citation in citation_map.get("citations", []):
+        groups.setdefault(int(citation.get("group", -1)), []).append(citation)
+    counter = iter(range(1_000_000))
+
+    def marker(_match: re.Match[str]) -> str:
+        return CITE.format(next(counter))
+
+    text = re.sub(r"[ \t]*" + GROUP.pattern, marker, markdown)
+    lines, kept, skipping = text.splitlines(), [], False
+    for line in lines:
+        if SOURCES_HEADING.match(line):
+            kept += ["## Sources", "", SOURCE_LIST, ""]
+            skipping = True
+            continue
+        if skipping and re.match(r"^#{1,2}\s", line):
+            skipping = False
+        if not skipping:
+            kept.append(line)
+    if SOURCE_LIST not in kept and citation_map.get("notes"):
+        kept += ["", "## Sources", "", SOURCE_LIST]
+    replacements: dict[str, str] = {}
+    first_use: dict[int, str] = {}
+    for index, citations in groups.items():
+        anchors = []
+        for item in citations:
+            number = int(item["n"])
+            anchor_id = f"cite-{index}-{number}"
+            first_use.setdefault(number, anchor_id)
+            # The number jumps to the source entry in this document; the exact passage, moment,
+            # or line is kept on the anchor (data-link) and listed in that entry.
+            anchors.append(
+                f'<a id="{anchor_id}" href="#note-{number}" data-cite="{number}" '
+                f'data-link="{html.escape(item.get("link") or "")}"'
+                + (f' title="{html.escape(item["place"])}"' if item.get("place") else "") + f'>{number}</a>'
+            )
+        replacements[CITE.format(index)] = f'<sup class="cn">{",".join(anchors)}</sup>'
+    items = []
+    for note in citation_map.get("notes", []):
+        url = str(note.get("url") or "")
+        described = ". ".join(html.escape(str(part)) for part in (note.get("title"), note.get("publisher"), note.get("date")) if part)
+        shown = re.sub(r"/(blob|commit)/([0-9a-f]{7})[0-9a-f]+", r"/\1/\2", re.sub(r"^https?://(www\.)?", "", url)).rstrip("/")
+        link = f' <a href="{html.escape(url)}">{html.escape(shown)}</a>' if url else ""
+        # Which part of a repository this entry is, and every timestamp or line the report cites.
+        part = f' <span class="part">{html.escape(note["part"][0].upper() + note["part"][1:])}</span>.' if note.get("part") else ""
+        places = note.get("places") or []
+        cited = (" Cited at " + ", ".join(f'<a href="{html.escape(item["link"])}">{html.escape(item["label"])}</a>'
+                                         for item in places) + ".") if places else ""
+        back = f' <a class="back" href="#{first_use[int(note["n"])]}" title="Back to the text">↩</a>' if int(note["n"]) in first_use else ""
+        items.append(f'<li id="note-{note["n"]}" value="{note["n"]}"><span class="grade">{html.escape(str(note.get("grade") or ""))}</span> '
+                     f'{described}.{part}{cited}{link}{back}</li>')
+    replacements[f"<p>{SOURCE_LIST}</p>"] = f'<ol class="source-notes">{"".join(items)}</ol>'
+    return "\n".join(kept) + ("\n" if markdown.endswith("\n") else ""), replacements
+
+
+def markdown_to_html(markdown: str, title: str, css: str, citation_map: dict[str, Any] | None = None) -> str:
+    replacements: dict[str, str] = {}
+    if citation_map:
+        markdown, replacements = _with_citations(markdown, citation_map)
     lines = reader_text(markdown).splitlines()
     body: list[str] = []
     paragraph: list[str] = []
@@ -106,6 +181,12 @@ def markdown_to_html(markdown: str, title: str, css: str) -> str:
         flush_table()
         heading = re.match(r"^(#{1,4})\s+(.*)$", line)
         item = re.match(r"^\s*[-*]\s+(.*)$", line)
+        if re.fullmatch(r"\s*(?:-{3,}|\*{3,}|_{3,})\s*", line):
+            # A dividing rule (the catalog separates stated items from leads with one).
+            flush_paragraph()
+            flush_list()
+            body.append("<hr>")
+            continue
         if heading:
             flush_paragraph()
             flush_list()
@@ -126,11 +207,14 @@ def markdown_to_html(markdown: str, title: str, css: str) -> str:
             body.append(f"<blockquote>{_inline(line.lstrip('> '))}</blockquote>")
         else:
             paragraph.append(line)
-    return (
+    document = (
         "<!doctype html>\n<html lang=\"en-US\"><head><meta charset=\"utf-8\">"
         f"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{html.escape(title)}</title>"
         f"<style>{css}</style></head><body><main><div class=\"meta\">Company research</div>{''.join(body)}</main></body></html>\n"
     )
+    for marker, markup in replacements.items():
+        document = document.replace(marker, markup)
+    return document
 
 
 def _diagram_gallery(root: Path) -> str:
@@ -245,6 +329,18 @@ def _pdf_pages(path: Path) -> int:
     return len(re.findall(rb"/Type\s*/Page\b", path.read_bytes()))
 
 
+def _chromium() -> str | None:
+    """A Chromium to print PDFs with: on PATH, in Playwright's browser folders (the cloud
+    container keeps one there, off PATH), or in the usual desktop places."""
+    candidates = [shutil.which(name) for name in ("chromium", "chromium-browser", "google-chrome", "chrome")]
+    for base in (os.environ.get("PLAYWRIGHT_BROWSERS_PATH"), "/opt/pw-browsers", str(Path.home() / ".cache/ms-playwright")):
+        if base and Path(base).is_dir():
+            candidates += sorted((str(path) for path in Path(base).glob("chromium*/chrome-linux*/chrome")), reverse=True)
+            candidates += sorted((str(path) for path in Path(base).glob("chromium*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium")), reverse=True)
+    candidates.append("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    return next((candidate for candidate in candidates if candidate and Path(candidate).is_file()), None)
+
+
 def render_pdf(html_path: Path, markdown: str, pdf_path: Path) -> tuple[str, int]:
     if os.environ.get("RESEARCH_CONTROL_PDF_RENDERER", "").lower() == "stdlib":
         return "stdlib-pdf", make_pdf(reader_text(markdown), pdf_path)
@@ -253,22 +349,13 @@ def render_pdf(html_path: Path, markdown: str, pdf_path: Path) -> tuple[str, int
     commands: list[tuple[str, list[str]]] = []
     if executable := shutil.which("weasyprint"):
         commands.append(("weasyprint", [executable, html_path.as_uri(), str(pdf_path)]))
-    chrome = next(
-        (
-            candidate for candidate in (
-                shutil.which("chromium"),
-                shutil.which("chromium-browser"),
-                shutil.which("google-chrome"),
-                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            )
-            if candidate and Path(candidate).is_file()
-        ),
-        None,
-    )
+    chrome = _chromium()
     if chrome:
         commands.append(("chromium", [
             chrome,
             "--headless",
+            # Chromium refuses to run as root (a container) with its sandbox on.
+            *(["--no-sandbox"] if hasattr(os, "geteuid") and os.geteuid() == 0 else []),
             "--disable-gpu",
             "--no-pdf-header-footer",
             f"--print-to-pdf={pdf_path}",
@@ -285,7 +372,8 @@ def render_pdf(html_path: Path, markdown: str, pdf_path: Path) -> tuple[str, int
             pages = _pdf_pages(pdf_path)
             if pages:
                 return name, pages
-    return "stdlib-pdf", make_pdf(markdown, pdf_path)
+    # No page renderer: the plain-text PDF is a placeholder, and the metadata says so.
+    return "stdlib-pdf (no browser renderer found; install Chromium or WeasyPrint)", make_pdf(markdown, pdf_path)
 
 
 def make_page_previews(pdf_path: Path, markdown: str, directory: Path, slug: str) -> tuple[str, list[str]]:
@@ -315,6 +403,7 @@ def _render_inputs(root: Path, source: Path) -> dict[str, str]:
     patterns = [
         str(source.relative_to(root)),
         "05-synthesis/design/style.css",
+        "tools/outputs/citation-map-*.json",
         "research_control/publication.py",
         "research_control/diagram_contract.py",
         *(spec["path"] for spec in DIAGRAM_SPECS),
@@ -448,7 +537,9 @@ def render(root: Path) -> dict[str, Any]:
             metadata["total_pages"] += int(record.get("pages", 0))
             continue
         title = "Company brief"
-        document = markdown_to_html(markdown, title, css)
+        map_path = root / f"tools/outputs/citation-map-{slug}.json"
+        citation_map = load_json(map_path) if map_path.is_file() else None
+        document = markdown_to_html(markdown, title, css, citation_map)
         document = document.replace("</main>", _diagram_gallery(root) + "</main>", 1)
         atomic_write_text(html_path, document)
         pdf_renderer, pages = render_pdf(html_path, markdown, pdf_path)

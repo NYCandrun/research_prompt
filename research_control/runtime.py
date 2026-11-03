@@ -40,12 +40,18 @@ TASK_STATES = {
     "blocked",
     "stale",
     "cancelled",
+    "superseded",
 }
 ACTIVE_STATES = {"leased", "running", "validating"}
 SUCCESS_STATES = {"succeeded"}
-FINAL_STATES = {"succeeded", "failed", "blocked", "cancelled"}
-DISCOVERY_TERMINAL = {"saturated", "not_applicable", "blocked", "incomplete"}
-DISCOVERY_COMPLETE = {"saturated", "not_applicable"}
+FINAL_STATES = {"succeeded", "failed", "blocked", "cancelled", "superseded"}
+# A superseded task's finished work was handed to replacement tasks; it satisfies
+# dependencies and phase accounting like a success but is never redone.
+SATISFIED_STATES = {"succeeded", "superseded"}
+DISCOVERY_TERMINAL = {"saturated", "sufficient", "not_applicable", "blocked", "incomplete"}
+DISCOVERY_COMPLETE = {"saturated", "sufficient", "not_applicable"}
+# Sources that are recorded with provenance but never assigned capture work.
+UNCAPTURED_RELEVANCE = {"excluded", "duplicate", "lead", "inventory"}
 
 
 def _json(value: Any) -> str:
@@ -116,13 +122,6 @@ class RuntimeStore:
         self.connection.execute("PRAGMA synchronous = FULL")
         self.connection.execute("PRAGMA busy_timeout = 30000")
         self._create_schema()
-        self._add_column("discovery_channels", "approaches_tried", "TEXT NOT NULL DEFAULT '[]'")
-
-    def _add_column(self, table: str, column: str, definition: str) -> None:
-        existing = {row[1] for row in self.connection.execute(f"PRAGMA table_info({table})")}
-        if column not in existing:
-            with self.connection:
-                self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def __enter__(self) -> "RuntimeStore":
         return self
@@ -153,6 +152,7 @@ class RuntimeStore:
                 track_input_staleness INTEGER NOT NULL,
                 max_attempts INTEGER NOT NULL,
                 attempt_count INTEGER NOT NULL DEFAULT 0,
+                attempt_base INTEGER NOT NULL DEFAULT 0,
                 lease_owner TEXT,
                 lease_expires_at TEXT,
                 heartbeat_at TEXT,
@@ -250,6 +250,15 @@ class RuntimeStore:
             CREATE INDEX IF NOT EXISTS shared_url_uses_purpose ON shared_url_uses(purpose, consumer);
             """
         )
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(tasks)")}
+        if "attempt_base" not in columns:
+            # Attempt numbers stay unique per task; a requested rerun moves the
+            # base its attempt budget counts from instead of resetting them.
+            self.connection.execute("ALTER TABLE tasks ADD COLUMN attempt_base INTEGER NOT NULL DEFAULT 0")
+            self.connection.execute(
+                "UPDATE tasks SET attempt_count=(SELECT MAX(attempt) FROM attempts WHERE attempts.task_id=tasks.task_id) "
+                "WHERE attempt_count < (SELECT COALESCE(MAX(attempt), 0) FROM attempts WHERE attempts.task_id=tasks.task_id)"
+            )
         self.connection.commit()
 
     def initialize(
@@ -331,8 +340,29 @@ class RuntimeStore:
                 "max_attempts": existing["max_attempts"],
                 "metadata": existing["metadata"],
             }
-            if comparison != immutable:
-                raise ValueError(f"{item.task_id}: immutable work-item definition changed")
+            known = {
+                row["depends_on"] for row in self.connection.execute(
+                    "SELECT depends_on FROM dependencies WHERE task_id=?", (item.task_id,)
+                )
+            }
+            new_dependencies = bool(set(item.depends_on) - known)
+            if comparison != immutable or (new_dependencies and existing["state"] in SATISFIED_STATES):
+                if existing["state"] in SATISFIED_STATES:
+                    # Finished work stays governed by the definition it ran under: an engine
+                    # change (filing becoming runtime work, say, or a new check before the
+                    # reviews) never invalidates a result. Redoing it is an explicit `work rerun`.
+                    changed = sorted(key for key in immutable if immutable[key] != comparison[key])
+                    changed += ["depends_on"] if new_dependencies else []
+                    recorded = self.connection.execute(
+                        "SELECT 1 FROM events WHERE event_type='definition_kept' AND subject_id=? LIMIT 1", (item.task_id,)
+                    ).fetchone()
+                    if not recorded:
+                        self.event("definition_kept", item.task_id, {"changed": changed, "state": existing["state"]})
+                    return False
+                raise ValueError(
+                    f"{item.task_id}: immutable work-item definition changed while the task is unfinished "
+                    f"({existing['state']}); retire it and plan the new definition under a new task ID"
+                )
             for dependency in item.depends_on:
                 self.add_dependency(item.task_id, dependency)
             return False
@@ -386,6 +416,17 @@ class RuntimeStore:
                 (utc_now(), task_id),
             )
 
+    def remove_dependency(self, task_id: str, depends_on: str) -> bool:
+        """Drop a dependency edge that the plan no longer requires."""
+        with self.connection:
+            removed = self.connection.execute(
+                "DELETE FROM dependencies WHERE task_id=? AND depends_on=?", (task_id, depends_on)
+            ).rowcount
+        if removed:
+            self.event("dependency_removed", task_id, {"depends_on": depends_on})
+            self.refresh_ready()
+        return bool(removed)
+
     def _task_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
         result = dict(row)
         result.update(
@@ -436,7 +477,7 @@ class RuntimeStore:
         now = utc_now()
         with self.connection:
             candidates = self.connection.execute(
-                "SELECT task_id, state, attempt_count, max_attempts FROM tasks "
+                "SELECT task_id, state, attempt_count - attempt_base AS attempt_count, max_attempts FROM tasks "
                 "WHERE state IN ('planned', 'ready', 'retryable', 'stale')"
             ).fetchall()
             for row in candidates:
@@ -452,7 +493,7 @@ class RuntimeStore:
                     """
                     SELECT COUNT(*) FROM dependencies d
                     JOIN tasks parent ON parent.task_id=d.depends_on
-                    WHERE d.task_id=? AND parent.state!='succeeded'
+                    WHERE d.task_id=? AND parent.state NOT IN ('succeeded', 'superseded')
                     """,
                     (row["task_id"],),
                 ).fetchone()[0]
@@ -481,10 +522,16 @@ class RuntimeStore:
                 prior = output_owner.get(relative)
                 if prior is None or rank >= prior[1]:
                     output_owner[relative] = (task["task_id"], rank)
+        # Outputs an active task is rewriting (a revise-mode pass in progress)
+        # are mid-edit, not changed under their finished owner.
+        in_progress: set[str] = set()
+        for active in self.tasks(states=ACTIVE_STATES):
+            for pattern in active["outputs"]:
+                in_progress.update(str(path.relative_to(self.root)) for path in resolve_pattern(self.root, pattern))
         for task in successes:
             owned_outputs = {
                 relative: digest for relative, digest in task["output_hashes"].items()
-                if output_owner.get(relative, (None, ""))[0] == task["task_id"]
+                if output_owner.get(relative, (None, ""))[0] == task["task_id"] and relative not in in_progress
             }
             outputs_current = bool(task["output_hashes"]) and all(
                 hash_path(self.root / relative) == digest
@@ -511,8 +558,9 @@ class RuntimeStore:
         if stale:
             now = utc_now()
             with self.connection:
+                # Rerunning changed work gets a fresh attempt budget.
                 self.connection.executemany(
-                    "UPDATE tasks SET state='stale', finished_at=NULL, updated_at=? WHERE task_id=?",
+                    "UPDATE tasks SET state='stale', finished_at=NULL, attempt_base=attempt_count, updated_at=? WHERE task_id=?",
                     [(now, task_id) for task_id in sorted(stale)],
                 )
             for task_id in sorted(stale):
@@ -520,18 +568,161 @@ class RuntimeStore:
         self.refresh_ready()
         return sorted(stale)
 
-    def mark_stale(self, task_id: str, reason: str) -> dict[str, Any]:
+    def restore(self, task_id: str, reason: str) -> dict[str, Any]:
+        """Return a superseded task, or one marked for rerun, to succeeded.
+
+        Allowed only when its last attempt succeeded and the outputs it recorded
+        are unchanged on disk, so the restored result is exactly the one that
+        was produced and validated.
+        """
         task = self.task(task_id)
         if not task:
             raise KeyError(f"unknown task: {task_id}")
-        if task["state"] != "succeeded":
+        if task["state"] not in {"superseded", "stale", "ready", "planned"}:
+            raise ValueError(f"{task_id}: cannot restore a task in state {task['state']}")
+        last = self.connection.execute(
+            "SELECT state, finished_at FROM attempts WHERE task_id=? ORDER BY attempt DESC LIMIT 1", (task_id,)
+        ).fetchone()
+        if not last or last["state"] != "succeeded" or not task["output_hashes"]:
+            raise ValueError(f"{task_id}: its last attempt did not succeed, so there is no completed work to restore")
+        # A path a later-finished task revised belongs to that task now.
+        revised: set[str] = set()
+        for other in self.tasks(states={"succeeded"}):
+            finished, own = str(other.get("finished_at") or ""), str(last["finished_at"] or "")
+            # A recorded revision in the same second as the task still came after it.
+            if other["task_id"] != task_id and (finished > own or (other["task_type"] == "revision" and finished >= own)):
+                revised.update(other["output_hashes"])
+        changed = [
+            relative for relative, digest in task["output_hashes"].items()
+            if relative not in revised and hash_path(self.root / relative) != digest
+        ]
+        if changed:
+            raise ValueError(f"{task_id}: outputs changed since it finished: {', '.join(changed[:5])}")
+        # Restoring is the orchestrator's judgment that the result holds for the
+        # inputs as they are now, so a task that tracks its inputs accepts them.
+        patterns = [str(item["path"]) for item in task["inputs"] if item.get("path")]
+        inputs = hash_patterns(self.root, patterns) if task["track_input_staleness"] else task["input_hashes"]
+        with self.connection:
+            self.connection.execute(
+                "UPDATE tasks SET state='succeeded', last_error=NULL, finished_at=?, input_hashes_json=?, updated_at=? "
+                "WHERE task_id=?",
+                (last["finished_at"], json.dumps(inputs, sort_keys=True), utc_now(), task_id),
+            )
+        self.event("task_restored", task_id, {"reason": reason})
+        self.refresh_ready()
+        return self.task(task_id) or task
+
+    def record_edit(self, paths: list[str], phase: str, reason: str, worker_id: str) -> dict[str, Any]:
+        """Record a small sanctioned edit of finished tasks' outputs: the edit owns
+        the files, tasks that read them keep their results, and a finished task
+        that went stale only because of the edit is restored rather than rerun."""
+        stamp = utc_now().replace(":", "").replace("-", "").lower()
+        revision = self.record_revision(f"{phase}.edit.{stamp}", phase, paths, reason, worker_id)
+        rebaselined = self.rebaseline_inputs(paths, reason)
+        restored: list[str] = []
+        for task in self.tasks(states={"stale", "ready"}):
+            if set(task["output_hashes"]) & set(paths):
+                try:
+                    self.restore(task["task_id"], f"edit recorded: {reason}")
+                except ValueError:
+                    continue
+                restored.append(task["task_id"])
+        return {"revision": revision["task_id"], "rebaselined": rebaselined, "restored": restored}
+
+    def record_revision(self, task_id: str, phase: str, outputs: list[str], reason: str, worker_id: str) -> dict[str, Any]:
+        """Record an orchestrator's sanctioned edit of shared files as a finished
+        revise-mode task, so the edit owns those files and the task that first
+        wrote them is not treated as changed under it."""
+        if self.task(task_id):
+            raise ValueError(f"{task_id}: a revision with this ID is already recorded")
+        self.add_task(WorkItem(
+            task_id=task_id, phase=phase, task_type="revision", inputs=[], outputs=outputs,
+            prompt_files=["prompts/core/runtime.md"], output_mode="revise", exclusive_inputs=False,
+            metadata={"executor": "runtime", "reason": reason},
+        ))
+        self.claim(worker_id, task_id=task_id, bypass_limits=True)
+        self.start(task_id, worker_id)
+        return self.complete(task_id, worker_id)
+
+    def rebaseline_inputs(self, paths: list[str], reason: str, among: set[str] | None = None) -> list[str]:
+        """Accept an edit of these inputs for finished tasks that track input
+        staleness: their recorded input hashes are refreshed, so they are not
+        rerun for it. For edits whose effect reaches downstream another way."""
+        refreshed: list[str] = []
+        edited = set(paths)
+        for task in self.tasks(states={"succeeded"}):
+            if not task["track_input_staleness"] or (among is not None and task["task_id"] not in among):
+                continue
+            patterns = [str(item["path"]) for item in task["inputs"] if item.get("path")]
+            if not any(
+                pattern in edited
+                or any(str(path.relative_to(self.root)) in edited for path in resolve_pattern(self.root, pattern))
+                for pattern in patterns
+            ):
+                continue
+            current = hash_patterns(self.root, patterns)
+            if current == task["input_hashes"]:
+                continue
+            with self.connection:
+                self.connection.execute(
+                    "UPDATE tasks SET input_hashes_json=?, updated_at=? WHERE task_id=?",
+                    (json.dumps(current, sort_keys=True), utc_now(), task["task_id"]),
+                )
+            self.event("task_rebaselined", task["task_id"], {"paths": paths, "reason": reason})
+            refreshed.append(task["task_id"])
+        return refreshed
+
+    def supersede(self, task_id: str, reason: str) -> dict[str, Any]:
+        """Retire a finished or idle task whose work now belongs to replacement tasks."""
+        task = self.task(task_id)
+        if not task:
+            raise KeyError(f"unknown task: {task_id}")
+        if task["state"] in ACTIVE_STATES:
+            raise ValueError(f"{task_id}: cannot supersede active work")
+        if task["state"] == "superseded":
             return task
         with self.connection:
             self.connection.execute(
-                "UPDATE tasks SET state='stale', finished_at=NULL, last_error=?, updated_at=? WHERE task_id=?",
+                "UPDATE tasks SET state='superseded', last_error=?, updated_at=? WHERE task_id=?",
                 (reason, utc_now(), task_id),
             )
+        self.event("task_superseded", task_id, {"reason": reason})
+        self.refresh_ready()
+        return self.task(task_id) or task
+
+    def mark_stale(self, task_id: str, reason: str, *, propagate: bool = True) -> dict[str, Any]:
+        task = self.task(task_id)
+        if not task:
+            raise KeyError(f"unknown task: {task_id}")
+        if task["state"] not in {"succeeded", "blocked", "failed"}:
+            return task
+        # Completed consumers of this task's outputs are stale with it.
+        stale = [task_id]
+        frontier = [task_id] if propagate else []
+        while frontier:
+            parent = frontier.pop()
+            for row in self.connection.execute(
+                "SELECT task_id FROM dependencies WHERE depends_on=?", (parent,)
+            ).fetchall():
+                child = self.task(row["task_id"])
+                if child and child["state"] == "succeeded" and child["task_id"] not in stale:
+                    stale.append(child["task_id"])
+                    frontier.append(child["task_id"])
+        now = utc_now()
+        with self.connection:
+            self.connection.execute(
+                # A requested rerun gets a fresh attempt budget, not a retry of a failure.
+                "UPDATE tasks SET state='stale', finished_at=NULL, attempt_base=attempt_count, last_error=?, updated_at=? "
+                "WHERE task_id=?",
+                (reason, now, task_id),
+            )
+            self.connection.executemany(
+                "UPDATE tasks SET state='stale', finished_at=NULL, attempt_base=attempt_count, updated_at=? WHERE task_id=?",
+                [(now, child) for child in stale[1:]],
+            )
         self.event("task_stale", task_id, {"reason": reason})
+        for child in stale[1:]:
+            self.event("task_stale", child, {"reason": f"upstream {task_id} is stale"})
         self.refresh_ready()
         return self.task(task_id) or task
 
@@ -542,7 +733,14 @@ class RuntimeStore:
         task_id: str | None = None,
         capabilities: Iterable[str] | None = None,
         phase: str | None = None,
+        bypass_limits: bool = False,
     ) -> dict[str, Any] | None:
+        """Lease ready work.
+
+        ``bypass_limits`` is reserved for the in-process runtime executor, which
+        runs one deterministic task at a time and paces its own requests; agent
+        workers always respect the global and per-host concurrency limits.
+        """
         if not worker_id.strip():
             raise ValueError("worker_id is required")
         self.recover_expired()
@@ -551,7 +749,7 @@ class RuntimeStore:
         global_limit = int(metadata.get("global_concurrency", DEFAULT_GLOBAL_CONCURRENCY))
         host_limit = int(metadata.get("host_concurrency", DEFAULT_HOST_CONCURRENCY))
         capability_values = sorted(set(capabilities or []))
-        clauses = ["state IN ('ready', 'retryable')", "attempt_count < max_attempts"]
+        clauses = ["state IN ('ready', 'retryable')", "attempt_count - attempt_base < max_attempts"]
         values: list[Any] = []
         if task_id:
             clauses.append("task_id=?")
@@ -566,7 +764,7 @@ class RuntimeStore:
             active = self.connection.execute(
                 "SELECT COUNT(*) FROM tasks WHERE state IN ('leased','running','validating')"
             ).fetchone()[0]
-            if active >= global_limit:
+            if active >= global_limit and not bypass_limits:
                 return None
             rows = self.connection.execute(
                 f"SELECT task_id, host_key FROM tasks WHERE {' AND '.join(clauses)} "
@@ -575,7 +773,7 @@ class RuntimeStore:
             ).fetchall()
             selected: sqlite3.Row | None = None
             for row in rows:
-                if row["host_key"]:
+                if row["host_key"] and not bypass_limits:
                     host_active = self.connection.execute(
                         "SELECT COUNT(*) FROM tasks WHERE host_key=? AND state IN ('leased','running','validating')",
                         (row["host_key"],),
@@ -727,8 +925,33 @@ class RuntimeStore:
                 (now, now, _json(telemetry or {}), task_id, task["attempt_count"]),
             )
         self.event("task_succeeded", task_id, {"worker_id": worker_id, "attempt": task["attempt_count"]})
+        if task["output_mode"] == "revise":
+            # A later pass revising files that earlier work read (the review fixer editing the
+            # synthesis that verification read) is the workflow's intended next step, not a
+            # change under those results: they keep them rather than rerunning.
+            self.rebaseline_inputs(sorted(output_hashes), f"revised by {task_id}", among=self._earlier_work(task))
         self.refresh_ready()
         return terminal
+
+    def _earlier_work(self, task: dict[str, Any]) -> set[str]:
+        """Finished tasks that come before this one: those it depends on, directly or
+        through others, and those in phases the workflow runs before its own."""
+        earlier: set[str] = set()
+        frontier = [task["task_id"]]
+        while frontier:
+            for row in self.connection.execute("SELECT depends_on FROM dependencies WHERE task_id=?", (frontier.pop(),)):
+                if row["depends_on"] not in earlier:
+                    earlier.add(row["depends_on"])
+                    frontier.append(row["depends_on"])
+        try:
+            from research_control.orchestration import phase_order
+            order = phase_order(self.root)
+        except (OSError, KeyError, ValueError):
+            order = []
+        if task["phase"] in order:
+            before = set(order[: order.index(task["phase"])])
+            earlier.update(other["task_id"] for other in self.tasks(states={"succeeded"}) if other["phase"] in before)
+        return earlier
 
     def fail(
         self,
@@ -740,7 +963,7 @@ class RuntimeStore:
         telemetry: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         task = self._owned_active(task_id, worker_id, ACTIVE_STATES)
-        exhausted = task["attempt_count"] >= task["max_attempts"]
+        exhausted = task["attempt_count"] - task["attempt_base"] >= task["max_attempts"]
         state = "retryable" if retryable and not exhausted else "blocked" if retryable else "failed"
         now = utc_now()
         terminal = {
@@ -822,6 +1045,7 @@ class RuntimeStore:
         discovered_from: str | None = None,
         depth: int = 0,
         metadata: dict[str, Any] | None = None,
+        reopen_channel: bool = True,
     ) -> tuple[dict[str, Any], bool]:
         existing = self.connection.execute(
             "SELECT * FROM sources WHERE canonical_url=?", (canonical_url,)
@@ -845,7 +1069,7 @@ class RuntimeStore:
             )
         self.ensure_discovery_channel(channel)
         current = self.discovery_channel(channel)
-        if current and (current["state"] != "open" or int(current["consecutive_empty_passes"]) != 0):
+        if reopen_channel and current and (current["state"] != "open" or int(current["consecutive_empty_passes"]) != 0):
             with self.connection:
                 self.connection.execute(
                     """
@@ -933,17 +1157,23 @@ class RuntimeStore:
         self.event("discovery_pass", channel, {"new_sources": new_sources, "state": state, "evidence": evidence})
         return result
 
-    def set_discovery_channel(self, channel: str, state: str, evidence: str, tried: list[str] | None = None) -> dict[str, Any]:
+    def set_discovery_channel(self, channel: str, state: str, evidence: str) -> dict[str, Any]:
         if state not in DISCOVERY_TERMINAL | {"open"}:
             raise ValueError(f"unsupported discovery state: {state}")
         self.ensure_discovery_channel(channel)
-        approaches = [str(item) for item in (tried or [])]
         with self.connection:
-            self.connection.execute(
-                "UPDATE discovery_channels SET state=?, completion_evidence=?, approaches_tried=?, updated_at=? WHERE channel=?",
-                (state, evidence, _json(approaches), utc_now(), channel),
-            )
-        self.event("discovery_channel_updated", channel, {"state": state, "evidence": evidence, "tried": approaches})
+            if state == "open":
+                self.connection.execute(
+                    "UPDATE discovery_channels SET state=?, consecutive_empty_passes=0, "
+                    "completion_evidence=?, updated_at=? WHERE channel=?",
+                    (state, evidence, utc_now(), channel),
+                )
+            else:
+                self.connection.execute(
+                    "UPDATE discovery_channels SET state=?, completion_evidence=?, updated_at=? WHERE channel=?",
+                    (state, evidence, utc_now(), channel),
+                )
+        self.event("discovery_channel_updated", channel, {"state": state, "evidence": evidence})
         return self.discovery_channel(channel) or {}
 
     def discovery_channel(self, channel: str) -> dict[str, Any] | None:

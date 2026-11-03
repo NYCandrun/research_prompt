@@ -5,6 +5,9 @@ import unittest
 from pathlib import Path
 
 from research_control import FAIL, PASS
+from research_control.io import atomic_write_jsonl, atomic_write_text, load_jsonl
+from research_control.reducers import reduce_extraction_parts
+from research_control.validators.extraction import validate_part as validate_extraction_part
 from research_control.validators.dates import validate_fact_dates, validate_source_dates
 from research_control.validators.facts import validate_records
 from research_control.validators.quotes import validate as validate_quotes
@@ -80,6 +83,94 @@ class FactValidatorTests(unittest.TestCase):
             date_report = validate_fact_dates([wrong_date], root, ["facts.md"], {"WEB-001": "2026-01-01"})
             self.assertEqual(FAIL, date_report["status"])
             self.assertTrue(any("does not match manifest" in item for item in date_report["failures"]))
+
+
+
+class ExtractionReducerTests(unittest.TestCase):
+    def test_reducer_reads_only_current_batches(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parts = root / "tools/outputs/worker-parts/extraction"
+            for batch in ("aaa", "bbb"):
+                atomic_write_jsonl(parts / f"{batch}.candidates.jsonl", [
+                    {"candidate_id": f"CAND-{batch.upper()}-001", "source_id": "SRC-1"},
+                ])
+                atomic_write_jsonl(parts / f"{batch}.dispositions.jsonl", [{
+                    "assignment_id": f"facts.extract.{batch}", "input_id": "SRC-1", "source_id": "SRC-1",
+                    "disposition": "completed", "evidence_paths": [], "output_ids": [f"CAND-{batch.upper()}-001"],
+                }])
+            current = [{"metadata": {
+                "candidate_part": "tools/outputs/worker-parts/extraction/bbb.candidates.jsonl",
+                "disposition_part": "tools/outputs/worker-parts/extraction/bbb.dispositions.jsonl",
+            }}]
+            # Batch aaa was superseded by bbb over the same source; only bbb counts.
+            report = reduce_extraction_parts(root, current)
+            self.assertEqual(1, report["candidates"])
+            merged = load_jsonl(root / "tools/candidates/all.jsonl")
+            self.assertEqual(["CAND-BBB-001"], [row["candidate_id"] for row in merged])
+
+
+    def test_reducer_marks_only_repeated_source_claim_and_quote(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            atomic_write_text(root / "02-facts/q01.md", "\n".join([
+                "| Fact ID | Claim | Verbatim quote | Source ID | Location | Source date | Grade | Topics | About | Said by | Verdict | Candidate | Notes |",
+                "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+                "| PRD-001 | c | Tribe builds agents. | SRC-1 | l | 2026 | P | Q1 | Tribe | Tribe | filed | CAND-AAA-001 | |",
+            ]) + "\n")
+            parts = root / "tools/outputs/worker-parts/extraction"
+            atomic_write_jsonl(parts / "aaa.candidates.jsonl", [
+                {"candidate_id": "CAND-AAA-001", "source_id": "SRC-1", "claim": "c", "quote": "Tribe builds agents."},
+            ])
+            atomic_write_jsonl(parts / "bbb.candidates.jsonl", [
+                {"candidate_id": "CAND-BBB-001", "source_id": "SRC-1", "claim": " C ", "quote": "Tribe  builds agents."},
+                {"candidate_id": "CAND-BBB-002", "source_id": "SRC-1", "claim": "Fast shipping", "quote": "It ships in weeks."},
+                {"candidate_id": "CAND-BBB-003", "source_id": "SRC-1", "claim": "fast SHIPPING", "quote": "it ships in weeks."},
+            ])
+            extra = [
+                {"candidate_id": "CAND-BBB-004", "source_id": "SRC-1", "claim": "Different claim", "quote": "Tribe builds agents.", "duplicate_of": "PRD-001"},
+                {"candidate_id": "CAND-BBB-005", "source_id": "SRC-1", "claim": "c", "quote": "builds agents."},
+                {"candidate_id": "CAND-BBB-006", "source_id": "SRC-2", "claim": "c", "quote": "Tribe builds agents."},
+            ]
+            atomic_write_jsonl(parts / "bbb.candidates.jsonl", load_jsonl(parts / "bbb.candidates.jsonl") + extra)
+            for batch in ("aaa", "bbb"):
+                atomic_write_jsonl(parts / f"{batch}.dispositions.jsonl", [{
+                    "assignment_id": f"facts.extract.{batch}", "input_id": "SRC-1", "source_id": "SRC-1",
+                    "disposition": "completed", "evidence_paths": [], "output_ids": [],
+                }])
+            report = reduce_extraction_parts(root)
+            rows = {row["candidate_id"]: row.get("duplicate_of") for row in load_jsonl(root / "tools/candidates/all.jsonl")}
+            self.assertEqual(2, report["duplicates_marked"])
+            self.assertEqual({"CAND-AAA-001": None, "CAND-BBB-001": "PRD-001", "CAND-BBB-002": None,
+                              "CAND-BBB-003": "CAND-BBB-002", "CAND-BBB-004": None,
+                              "CAND-BBB-005": None, "CAND-BBB-006": None}, rows)
+
+    def test_extraction_part_check_rejects_missing_quotes_and_dispositions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tools/extracts/canonical").mkdir(parents=True)
+            (root / "tools/extracts/canonical/SRC-1.txt").write_text("Tribe builds production agents for enterprises.\n", encoding="utf-8")
+            task = {
+                "inputs": [{"id": "SRC-1", "source_id": "SRC-1", "path": "tools/extracts/canonical/SRC-1.txt", "source_paths": []}],
+                "metadata": {
+                    "candidate_id_prefix": "CAND-AAA-",
+                    "candidate_part": "parts/aaa.candidates.jsonl",
+                    "disposition_part": "parts/aaa.dispositions.jsonl",
+                },
+            }
+            row = {
+                "topic": "product", "claim": "Tribe builds agents.", "source_id": "SRC-1", "location": "line 1",
+                "source_date": "2026-01-01", "grade": "P", "about": "Tribe AI", "said_by": "Tribe AI", "notes": "",
+            }
+            atomic_write_jsonl(root / "parts/aaa.candidates.jsonl", [
+                {**row, "candidate_id": "CAND-AAA-001", "quote": "builds production agents"},
+                {**row, "candidate_id": "CAND-AAA-002", "quote": "sells consulting hours"},
+            ])
+            atomic_write_jsonl(root / "parts/aaa.dispositions.jsonl", [])
+            failures = validate_extraction_part(root, task)
+            self.assertTrue(any("CAND-AAA-002: quote not found" in item for item in failures))
+            self.assertFalse(any("CAND-AAA-001" in item for item in failures))
+            self.assertTrue(any("SRC-1: needs exactly one disposition" in item for item in failures))
 
 
 if __name__ == "__main__":

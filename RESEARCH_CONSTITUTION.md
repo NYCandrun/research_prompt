@@ -36,8 +36,9 @@ The repository has three durable layers:
 3. Sense-making built only on the fact store, culminating in the company brief
    and an auditable four-diagram architecture package.
 
-A separate public-evidence brand branch runs concurrently with capture and
-produces the release brand guide. It may shape typography, color, spacing,
+A separate public-evidence brand branch starts with capture, runs alongside the
+research path, and produces the release brand guide. It gates only the final
+phase that consumes it, never a research gate. It may shape typography, color, spacing,
 diagram styling, and report presentation, but it never supplies company or
 architecture facts.
 
@@ -48,10 +49,11 @@ independently admit and record any material it uses under its own evidence
 contract. Neither branch waits for the other, and shared discovery never
 merges their responsibilities.
 
-The repository must be reproducible from the effective prompt, company URL,
+The run must be reproducible from the effective prompt, company URL,
 user-provided inputs, captured public sources, and dependencies created or
 declared during the run. Incidental local files or conventions are not valid
-dependencies.
+dependencies. Each run lives in its own directory with a snapshot of the policy,
+prompts, and control engine it ran with. A run never writes into the template.
 
 ## Scope
 
@@ -62,6 +64,16 @@ subdomains, docs, help, academy, developer resources, newsroom or blog,
 careers or ATS, status, public code, and package surfaces. Read every file in
 `00-inputs/` before scope is finalized.
 
+Scope numbers the research questions (`Q1`, `Q2`, ...), starting from the
+brief's required sections. These IDs bound the rest of the run. Search-driven
+discovery channels close as `sufficient` when their admitted sources answer the
+named questions, or as `saturated` when repeated passes add nothing. Extraction
+triage then gives every captured source one decision, include or exclude, by the
+questions it can answer. Excluded sources keep their capture and provenance and
+receive an `excluded` disposition; exclusion is never a way to drop
+contradicting evidence. The cost of reading, verifying, and reviewing evidence
+should track the brief's questions, not the size of a website.
+
 User direction establishes products in focus and important questions. If it is
 absent, cover products evenly and give the most depth to the flagship selected
 from company evidence. Every synthesis and brief-writing context must know the
@@ -69,14 +81,22 @@ flagship and why it was selected.
 
 The company-site sweep covers every discoverable company sitemap, including
 non-English docs and relevant microsites, for PDF and embedded-media discovery.
+The runtime performs this crawl and captures ordinary pages and PDFs itself.
 High-value pages are captured in full. Every company-hosted PDF is downloaded
-with a text copy and page boundaries. Every long-form company-channel or
-company-site video is in scope for transcription. YouTube Shorts are not.
+with a text copy and page boundaries. Video is in scope at every length,
+including Shorts, clips, and social video drops: every video on the company's
+own channels (YouTube, LinkedIn, X, Instagram, TikTok, Vimeo, and the company
+site), and every video or podcast in which the company's founders, executives,
+or named leaders appear, wherever it is published. The
+runtime transcribes media from published captions or, failing that, from a
+public audio download transcribed locally with Whisper, with timestamps. When
+neither works, the transcript is recorded as a limitation with the reason.
 
 Competitor research covers five to eight justified competitors plus a watch
-list unless user direction says otherwise. Public competitor docs are captured
-only for the competing product in a suite, normally capped around 400 pages per
-competitor with exclusions logged. Competitor videos are out except those the
+list unless user direction says otherwise. Competitor sources are admitted only
+when they answer a named question: positioning, packaging, pricing, or the
+specific capability being compared. A competitor's documentation or blog is not
+captured wholesale. Competitor videos are out except those the
 company embeds. Already captured and verified evidence is never discarded only
 because later scope narrows.
 
@@ -101,29 +121,42 @@ Facts supplied directly by the user are preserved verbatim as a Grade-I source
 and as facts with verdict `confirmed (user-provided)`. Do not independently
 check them unless the user asks.
 
-### Finding the data
+### Public-access boundary
 
-Find the data as best you can.
+Back off when rate limited and log failed access. When an admitted source
+cannot be captured, look for a publicly reachable copy of the same content
+(a wire-service or issuer copy of a release, a syndicated article, the same
+video or episode on another platform, the other party's own announcement)
+before accepting the gap; a page that only summarizes the original is not a
+copy. Try the Wayback Machine once.
+If the network path is blocked or repeatedly fails, stop that channel and use
+dated first-party sources for messaging history.
 
-`RESEARCH_PLAYBOOK.md` lists, for each channel, the approach that has worked
-before and the alternatives to try next. The packet writer copies the relevant
-sections into each research packet. Workers start with the first approach,
-work through the alternatives and anything else they can think of, and stop
-only when something works or five distinct approaches have failed. They do not
-judge whether an approach is acceptable. Anything not on the off-limits list
-is allowed.
+URLs on login-walled platforms (LinkedIn, X, Facebook, Instagram, Threads,
+TikTok) are recorded as leads with provenance and are not captured, except
+videos admitted on the video channel, which capture attempts to transcribe. When a
+question depends on such content, look for a public copy of it.
 
-The off-limits list is short and fixed: no logins or accounts, no payment or
-paywall-removal tricks, and no live paths that `robots.txt` disallows.
-Archived and syndicated copies are fine. A bot challenge counts as a failed
-approach. A rate limit means slow down and return later.
+Public sources are treated as intentionally public: a public repository, page,
+or file may be used for what it says about a firm. Records name
+organizations, repositories, and roles, never personal details.
 
-When anything other than the first approach works, the worker logs the
-failure, every approach tried, and exactly what worked with one
-`workaround add` call. The `run` command renders those entries into
-`RESEARCH_WORKAROUNDS.md` for the user to review and fold into the playbook. A
-channel or source is blocked only after the approaches fail, and the runtime
-rejects a blocked record that lists fewer than two distinct approaches.
+### Market and competitors
+
+Every run researches the market and its competitors, not only the company.
+Competitors are found from evidence (the company's own comparisons, shared
+partner directories and competency lists, marketplace categories, comparison
+pages, trade press, investors' portfolios) and marked direct (the same kind
+of offering to the same buyers, in a similar way) or adjacent. For direct
+competitors, public GitHub is investigated as cheaply as possible: who is
+affiliated with the firm (from public event records of who commits to and
+stars its repositories and its people's work repositories, confirmed by
+profile, membership, or repeated commits), then the firm's and its people's
+work repositories, read only for their description, file list, and Markdown
+and CSV files at the latest commit. Deleted and abandoned repositories are
+judged from the public event record; those that point at customer projects,
+abandoned products, or business and operations records are read from their
+archived copies (Software Heritage) the same way, never duplicating live ones.
 
 ## Evidence
 
@@ -164,8 +197,13 @@ an intermediate extract.
 ### Attribution and speaker identity
 
 Auto-captions and machine transcripts do not establish speaker identity.
-Attribute a person only when the source establishes it, such as through an
-introduction, direct address, or reliable labels. Otherwise use a source-level
+Whisper transcripts carry automatic diarization labels (`Speaker 1`,
+`Speaker 2`, ...). A label groups voices and marks turn changes; it can still
+split one person or merge two (recordings with more than four speakers share
+labels), and it never names anyone. Attribute a person only when the source establishes it, such as
+through an introduction, direct address, or reliable labels; a diarization
+label may carry a name only where the transcript ties that label to the person
+in the same exchange, and is then marked `(probable)`. Otherwise use a source-level
 description such as `a speaker in the <title> webinar`. Mark inferred speakers
 `(probable)` and unresolved ones `Speaker unclear`. Preserve known
 transcription errors for names, products, competitors, and people. A fact that
@@ -252,9 +290,14 @@ how a sentence changed from a prior draft. Say things explicitly rather than
 alluding to them. Verbatim quotes preserve original spelling and punctuation.
 proper nouns, titles, URLs, file names, and fact IDs are not rewritten.
 
-The narrative artifact is titled **company brief**. Its cover says **Focus:
-Product marketing**, and the front matter identifies the product-marketing
-point of view. Reader-facing copy never says `onboarding`, `starting at`, `the
+Keep copy tight: lead with the point, show the facts behind it, and write no
+filler, no tangents, and no repetition. Keep the context that gives a fact its
+meaning (date, change, speaker, strength of evidence). Length follows the
+evidence.
+
+The narrative artifact is titled **company brief**, about the whole company.
+Its cover says **Focus:** followed by the scope's focus, or "The whole company"
+when the scope names none. Reader-facing copy never says `onboarding`, `starting at`, `the
 new PMM`, or `the role`.
 
 Before design, a separate high-reasoning context reviews the company brief,
@@ -264,7 +307,9 @@ does not alter quotes, fact IDs, file names, or URLs.
 ## Publication
 
 Markdown remains the research trail and keeps fact IDs beside supported words.
-Rendered HTML and PDF replace fact IDs with superscript source numbers. No
+Rendered HTML and PDF replace fact IDs with superscript source numbers, each
+linked to the cited fact's deep link; a script builds the numbers, links,
+source list, and citation and exhibit maps from the fact IDs. No
 reader-facing output exposes repository paths, fact IDs, script names, build
 instructions, internal warnings, or remove-before-sharing notes.
 
@@ -287,14 +332,23 @@ of facts. Before design, commit or checksum the Markdown reference in which
 fact IDs sit beside supported words. Final exhibit and citation mappings must
 still match that reference or a later justified, reverified fact.
 
-The brief answers, in order: product and architecture; buyer and buying motion;
-positioning and change; direction; competitors; dependencies; questions and
-owners; evidence limits; and sources. It opens with a short summary and one
-portfolio exhibit, includes the product map and messaging timeline only in
-their intended sections, and targets 10 to 15 body pages excluding cover and
-sources.
+The brief is arranged top down from an executive summary: the company, its
+market and competitors, what it sells and how it is built, how it sells, its
+customers, its people, and its direction, then the catalog, open questions,
+evidence limits, and sources. Each research question is answered in the part it
+belongs to, under plain topical headings. The portfolio exhibit opens the
+offering part; the product map and messaging timeline appear only in their
+intended parts. There is no page or word target. Before the brief is written,
+a findings step on the strongest model reads the reviewed synthesis and the
+fact digests and writes what the evidence means and how the report is to be
+built (`05-synthesis/findings.md`): the findings as plain conclusions with
+their evidence and strength, the gaps, each part's main point and sub-points,
+its exhibits and their takeaways, what to leave out, and the one place each
+caveat is said. The brief is written to that plan: conclusions first, the
+facts after, each caveat once per part or exhibit, and exhibit cells that
+state the thing itself while the source note carries the quoted evidence.
 
-Section 7 frames unresolved questions neutrally as what the author would want
+The open-questions section frames unresolved questions neutrally as what the author would want
 to understand early. Names appear only when factually useful, not as task
 headings. The section does not open with Grade-I evidence or a guess about
 reporting lines. Evidence limits use reproducible counts and plain-language
@@ -342,10 +396,13 @@ rewriting unrelated copy.
 
 ## Model roles and independence
 
-Use the strongest available reasoning model at high effort for extraction,
-judgment, verification, synthesis, adversarial review, substantive fixes, and
-visual judgment. A faster capable model may perform mechanical editing and
-bounded transformations. Do not hard-code historical product names. Record
+Use the strongest available reasoning model at high effort for the hardest
+judgment: cited-fact verification, adversarial review, and architecture
+modeling. Use a flagship-class model at high effort for the rest of the
+extraction, synthesis, review, substantive fixes, and visual judgment. A
+balanced model may run discovery, triage, filing, and language review, and a
+faster capable model may perform mechanical editing and bounded
+transformations. `WORKFLOW.yaml` assigns each task type to a tier. Do not hard-code historical product names. Record
 model and effort when the runtime exposes them. Never invent missing metrics.
 
 Separate contexts are required for:
@@ -370,8 +427,9 @@ The effective dependency order is:
 
 1. Bootstrap the repository, tools, state, and bounded task contracts.
 2. Map scope and public source channels.
-3. Capture and reconcile the source record while an independent brand-guide
-   worker inspects, builds, renders, and checks the public visual system.
+3. Capture and reconcile the source record. An independent brand-guide worker
+   starts here and inspects, builds, renders, and checks the public visual
+   system alongside steps 3 through 9; only step 10 waits for it.
 4. Extract, file, and mechanically validate facts.
 5. Produce initial synthesis from script-checked facts.
 6. Model-verify every fact cited by that synthesis.
@@ -443,7 +501,10 @@ disposition, visual page record, and exact artifact hash. It writes a release
 manifest only after success. Accepted exceptions are explicit, justified,
 evidence-backed, and cannot override mandatory failed controls.
 
-Deterministic code handles deterministic work. Models receive concise failing
+Deterministic code handles deterministic work. The runtime itself crawls the
+first-party site, captures ordinary pages and PDFs, and runs the single-writer
+reducers under the same lease, ledger, and hash contracts as agent work. Agents
+receive only work that needs judgment. Models receive concise failing
 IDs and relevant context, while full records stay on disk. Efficiency never
 removes semantic review, visual review, complete reconciliation, or final
 acceptance.

@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 import json
 import os
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +25,7 @@ from research_control.orchestration import (
     next_packets,
     start_task,
 )
+from research_control.provision import provision_run
 from research_control.publication import make_pdf, render
 
 
@@ -33,10 +33,7 @@ SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
 
 def copy_template(target: Path) -> None:
-    for name in ("README.md", "RESEARCH_CONSTITUTION.md", "WORKFLOW.yaml", "RESEARCH_PLAYBOOK.md", "pyproject.toml"):
-        shutil.copy2(SOURCE_ROOT / name, target / name)
-    for name in ("prompts", "research_control", "tools"):
-        shutil.copytree(SOURCE_ROOT / name, target / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    provision_run(SOURCE_ROOT, target)
 
 
 def text(root: Path, relative: str, value: str = "complete\n") -> None:
@@ -214,7 +211,7 @@ class OperationalRunTests(unittest.TestCase):
                 lambda: text(
                     root,
                     "00-scope.md",
-                    "# Scope\n\nCompany URL: https://acme.example\n\n## Inputs\nNo user inputs.\n\n## Source plan\nFirst-party and third-party evidence.\n\n## Competitors\nComparable workflow products.\n",
+                    "# Scope\n\nCompany URL: https://acme.example\n\n## Inputs\nNo user inputs.\n\n## Source plan\nFirst-party and third-party evidence.\n\n## Competitors\nComparable workflow products.\n\n## Research questions\n\n- Q1 product and architecture.\n- Q7 competitors.\n",
                 ) or jsonl(root, "tools/outputs/input-classification.jsonl", [{
                     "assignment_id": "scope.scope", "input_id": "__none__", "disposition": "completed_zero",
                     "reason": "no user inputs", "evidence_paths": ["00-scope.md"], "output_ids": [],
@@ -250,7 +247,6 @@ class OperationalRunTests(unittest.TestCase):
                 }])
 
             complete_task(root, "capture.capture", "capture-worker", write_capture)
-            complete_task(root, "capture.brand-guide", "brand-guide-worker", lambda: write_brand_guide(root))
             report, _ = check_phase(root, "capture")
             self.assertEqual(PASS, report["status"], report)
 
@@ -267,6 +263,9 @@ class OperationalRunTests(unittest.TestCase):
                     "output_ids": ["CAND-001"],
                 }])
 
+            complete_task(root, "facts.triage", "triage-worker", lambda: jsonl(root, "tools/lists/extraction-triage.jsonl", [{
+                "id": "SRC-001", "decision": "include", "questions": ["Q1"], "reason": "homepage product statement",
+            }]))
             complete_task(root, "facts.extract", "extract-worker", write_extraction)
 
             def write_facts() -> None:
@@ -284,27 +283,39 @@ class OperationalRunTests(unittest.TestCase):
                     "output_ids": ["ACME-001"],
                 }])
                 text(root, "06-checks/script-audits.md", "# Script audit\n\nAll planted checks detected.\n")
+                text(root, "tools/outputs/filing-spot-sample.json", '{"merges": [], "filed": []}\n')
+
+            def write_spot_checks() -> None:
                 text(root, "06-checks/duplicate-spot-check.md", "# Duplicate spot check\n\nNo duplicates.\n")
                 text(root, "06-checks/filter-spot-check.md", "# Filter spot check\n\nNo misses.\n")
 
             complete_task(root, "facts.file-facts", "filing-worker", write_facts)
+            complete_task(root, "facts.filing-spot-check", "filing-reviewer", write_spot_checks)
             report, _ = check_phase(root, "facts")
             self.assertEqual(PASS, report["status"], report)
 
             synthesis_names = (
                 "product-map", "offering", "customers-proof", "competitors", "glossary",
-                "messaging-timeline", "organization", "direction", "open-questions",
+                "messaging-timeline", "organization", "direction", "inference-catalogue", "open-questions",
             )
 
-            def write_synthesis() -> None:
-                text(root, "tools/digests/company.md", "# Digest\n\nACME-001\n")
+            complete_task(root, "initial_synthesis.claim-digests", "runtime-executor", lambda: text(
+                root, "tools/digests/company.md", "# Digest\n\nACME-001\n"
+            ))
+
+            def write_groundwork() -> None:
                 text(root, "03-timelines/messaging.md", "# Timeline\n\n2026-01-01: Product evidence. ACME-001\n")
                 text(root, "tools/outputs/currency.csv", "fact_id,status\nACME-001,current\n")
-                for name in synthesis_names:
-                    text(root, f"05-synthesis/{name}.md", f"# {name.replace('-', ' ').title()}\n\nAcme provides workflow software. ACME-001\n")
-                text(root, "06-checks/currency-review.md", "# Currency review\n\nACME-001 is current as of 2026-01-01.\n")
 
-            complete_task(root, "initial_synthesis.synthesize", "synthesis-worker", write_synthesis)
+            complete_task(root, "initial_synthesis.groundwork", "synthesis-groundwork", write_groundwork)
+            complete_task(root, "initial_synthesis.currency-review", "currency-reviewer", lambda: text(
+                root, "06-checks/currency-review.md", "# Currency review\n\nACME-001 is current as of 2026-01-01.\n"
+            ))
+            # Each synthesis file has its own writer; open questions comes last.
+            for name in synthesis_names:
+                complete_task(root, f"initial_synthesis.write-{name}", f"writer-{name}", lambda name=name: text(
+                    root, f"05-synthesis/{name}.md", f"# {name.replace('-', ' ').title()}\n\nAcme provides workflow software. ACME-001\n"
+                ))
             report, _ = check_phase(root, "initial_synthesis")
             self.assertEqual(PASS, report["status"], report)
 
@@ -332,6 +343,9 @@ class OperationalRunTests(unittest.TestCase):
             report, _ = check_phase(root, "corrected_synthesis")
             self.assertEqual(PASS, report["status"], report)
 
+            from research_control.consistency import write_relationship_report
+
+            complete_task(root, "review.relationship-consistency", "runtime-executor", lambda: write_relationship_report(root))
             reviews = (
                 ("technical", "technical-reviewer", "review-technical", "technical"),
                 ("devils-advocate", "challenge-reviewer", "review-devils-advocate", "devils-advocate"),
@@ -376,6 +390,16 @@ class OperationalRunTests(unittest.TestCase):
                 atomic_write_json(root / "tools/outputs/citation-map-company-brief.json", citation_map)
                 atomic_write_json(root / "tools/outputs/exhibit-map.json", {"elements": [{"element_id": "portfolio", "fact_ids": ["ACME-001"], "evidence_bearing": True}]})
 
+            complete_task(root, "final.brand-guide", "brand-guide-worker", lambda: write_brand_guide(root))
+            from research_control.report_outline import write_report_outline
+
+            complete_task(root, "final.report-outline", "runtime-executor", lambda: write_report_outline(root))
+            complete_task(root, "final.findings", "findings-worker", lambda: text(
+                root, "05-synthesis/findings.md",
+                "# Findings\n\nEvery finding below is my inference from the cited facts.\n\n"
+                "## The company in one paragraph\n\nAcme sells workflow software [ACME-001].\n\n"
+                "## Findings\n\n1. Acme is a software company. Evidence: ACME-001.\n\n"
+                "## The report plan\n\nThe offering part opens with the one product [ACME-001].\n"))
             complete_task(root, "final.write-brief", "brief-writer", write_brief)
             complete_task(root, "final.model-diagrams", "diagram-modeler", lambda: write_diagram_models(root))
             complete_task(root, "final.build-diagrams", "diagram-builder", lambda: write_diagram_artifacts(root))
