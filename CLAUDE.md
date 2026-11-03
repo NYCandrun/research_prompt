@@ -43,6 +43,11 @@ every ready packet until exact-artifact release passes.
 - Ask the user only when something is genuinely ambiguous for this company,
   once, with a recommendation, while continuing everything that does not
   depend on the answer.
+- A company with more than one domain of its own (IDEO and IDEO U) is one run:
+  start it with `new --url URL --also URL`, one `--also` per extra domain, or
+  add a domain mid-run with `scope add-host --url URL --reason "..."` and rerun
+  `run`. Every first-party domain is crawled and graded as the company's own
+  words.
 - After the run, read `RESEARCH_WORKAROUNDS.md` in the run directory and fold
   what worked into the template's `RESEARCH_PLAYBOOK.md`.
 - Do not invent source, page, batch, or worker quotas. Discovery channels close

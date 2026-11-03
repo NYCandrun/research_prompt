@@ -25,7 +25,7 @@ from research_control.io import (
     resolve_pattern,
     workflow,
 )
-from research_control.orchestration import ACTIVE_PATH, all_task_definitions, load_state, set_phase_result
+from research_control.orchestration import ACTIVE_PATH, all_task_definitions, first_party, load_state, set_phase_result
 from research_control.reconciliation.assignments import reconcile_records, validate_ledger
 from research_control.reporting import make_validation_report
 from research_control.validators import american, brand, citations, dates, diagrams, exhibits, facts, quotes, sources, tags, visual_records, writing_rules
@@ -186,8 +186,8 @@ def _validate_scope(root: Path) -> dict[str, Any]:
     failures: list[str] = []
     if not unknowns:
         text = path.read_text(encoding="utf-8", errors="replace")
-        host = load_state(root).get("company_host", "")
-        if host and host not in text.casefold() and load_state(root)["company_url"] not in text:
+        urls, hosts = first_party(root)
+        if hosts and not any(host in text.casefold() for host in hosts) and not any(url in text for url in urls):
             failures.append("scope does not identify the configured company URL or host")
         for heading in ("source", "compet", "input"):
             if heading not in text.casefold():

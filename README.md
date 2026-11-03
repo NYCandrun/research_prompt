@@ -27,6 +27,20 @@ cd runs/<company-slug>
 python3 -m research_control run
 ```
 
+A company that publishes on more than one domain of its own (IDEO at ideo.com
+and its learning arm IDEO U at ideou.com) is one run. Name each extra domain
+with `--also`, repeatable:
+
+```bash
+python3 -m research_control new --url "https://www.ideo.com" --also "https://www.ideou.com"
+```
+
+The runtime crawls every first-party domain, audits its sitemaps, grades its
+pages as the company's own words, and files them by path like the main site. A
+domain found mid-run is added from inside the run directory with
+`python3 -m research_control scope add-host --url URL --reason "..."`, which
+seeds it and reopens the site crawl and sitemap audit; rerun `run` afterwards.
+
 `run` resumes the durable scheduler, executes deterministic work itself (site
 crawl, sitemap audit, page/PDF/media capture, reducers), plans the current
 phase, and writes ready agent packets under `tools/outputs/task-packets/`.

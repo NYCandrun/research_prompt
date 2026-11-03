@@ -4,6 +4,14 @@ Read the runtime and evidence cores, the company URL in the run state, and all
 user-provided material in `00-inputs/`. Inspect the company homepage before
 fixing scope.
 
+The run state lists every domain the company itself publishes on
+(`company_urls`), and the runtime crawls each one as the company's own words.
+When the company runs another domain of its own that the state does not list
+(a learning arm such as IDEO U, a product brand, a regional site), add it:
+`python3 -m research_control scope add-host --url URL --reason "..."`. A
+partner's, parent's, or acquirer's domain is not the company's own; list it in
+the source plan instead.
+
 Write `00-scope.md` with the company record, flagship and product boundaries,
 first-party surfaces, people, careers, investor, press, developer, media,
 third-party, and competitor source plans. Name likely ambiguities and make a

@@ -24,6 +24,7 @@ from urllib.request import Request, build_opener
 
 from research_control.capture import PublicRedirectHandler, USER_AGENT
 from research_control.io import append_jsonl, atomic_write_json, atomic_write_jsonl, atomic_write_text, utc_now, workflow
+from research_control.orchestration import first_party
 from research_control.competitors import MARKET_CHANNEL, registry_exists, subject_metadata
 from research_control.playbook import MIN_TRIED, distinct_tried, require_tried
 from research_control.runtime import DISCOVERY_COMPLETE, DISCOVERY_TERMINAL, RuntimeStore
@@ -177,12 +178,17 @@ def host_key(url: str) -> str:
     return (urlparse(url).hostname or "").casefold().removeprefix("www.")
 
 
-def _same_company_host(candidate: str, company_host: str) -> bool:
+def _same_company_host(candidate: str, company_host: str | list[str] | tuple[str, ...]) -> bool:
+    """True when the candidate sits on one of the company's own domains or a subdomain of one."""
     value = host_key(candidate)
-    return value == company_host or value.endswith(f".{company_host}") or company_host.endswith(f".{value}")
+    hosts = [company_host] if isinstance(company_host, str) else list(company_host)
+    return any(
+        value == host or value.endswith(f".{host}") or host.endswith(f".{value}")
+        for host in hosts if host
+    )
 
 
-def classify_channel(url: str, company_host: str, anchor_text: str = "") -> str:
+def classify_channel(url: str, company_host: str | list[str] | tuple[str, ...], anchor_text: str = "") -> str:
     parsed = urlparse(url)
     host = host_key(url)
     signal = f"{host} {parsed.path.casefold()} {anchor_text.casefold()}"
@@ -326,27 +332,48 @@ class DiscoveryEngine:
         metadata = store.metadata()
         self.company_url = canonicalize_url(metadata["company_url"])
         self.company_host = host_key(self.company_url)
+        self.company_urls, self.company_hosts = self._first_party()
+
+    def _first_party(self) -> tuple[list[str], list[str]]:
+        """Every URL and host the run treats as the company's own: the main one plus any added."""
+        try:
+            urls, _hosts = first_party(self.root)
+        except (FileNotFoundError, ValueError, KeyError):
+            urls = []
+        canonical = [self.company_url]
+        for value in urls:
+            try:
+                candidate = canonicalize_url(value)
+            except ValueError:
+                continue
+            if candidate not in canonical:
+                canonical.append(candidate)
+        return canonical, list(dict.fromkeys(host_key(value) for value in canonical))
 
     def initialize(self) -> dict[str, Any]:
         for channel in DISCOVERY_CHANNELS:
             self.store.ensure_discovery_channel(channel)
-        source, _created = self.store.add_source(
-            canonical_url=self.company_url,
-            original_url=self.company_url,
-            host_key=self.company_host,
-            channel="company_site",
-            source_kind="web_page",
-            relevance="required",
-            depth=0,
-            metadata={"seed": True},
-        )
-        self.shared_cache.note_url(
-            self.company_url,
-            consumer="capture.discover.company-site",
-            purpose="research_discovery",
-            discovered_from="company_url",
-        )
+        source: dict[str, Any] | None = None
+        for company_url in self.company_urls:
+            seeded, _created = self.store.add_source(
+                canonical_url=company_url,
+                original_url=company_url,
+                host_key=host_key(company_url),
+                channel="company_site",
+                source_kind="web_page",
+                relevance="required",
+                depth=0,
+                metadata={"seed": True},
+            )
+            self.shared_cache.note_url(
+                company_url,
+                consumer="capture.discover.company-site",
+                purpose="research_discovery",
+                discovered_from="company_url",
+            )
+            source = source or seeded
         self.write_catalog()
+        assert source is not None
         return source
 
     def add_candidates(
@@ -370,7 +397,7 @@ class DiscoveryEngine:
                 canonical = canonicalize_url(value, self.company_url)
                 if not discoverable_link(canonical) and not admissible_media(canonical, channel):
                     raise ValueError("non-research media or asset URL")
-                actual_channel = classify_channel(canonical, self.company_host)
+                actual_channel = classify_channel(canonical, self.company_hosts)
                 selected_channel = channel if channel != "company_site" else actual_channel
                 source, was_created = self.store.add_source(
                     canonical_url=canonical,
@@ -418,25 +445,35 @@ class DiscoveryEngine:
         return {"channel": channel, "new_source_ids": created, "rejected": rejected, "channel_state": channel_state}
 
     def seed_sitemaps(self) -> dict[str, Any]:
-        """Admit sitemaps declared in robots.txt, plus /sitemap.xml, as crawl inventories."""
-        parsed = urlparse(self.company_url)
+        """Admit sitemaps declared in robots.txt, plus /sitemap.xml, as crawl inventories, on every first-party domain."""
+        created: list[str] = []
+        notes: list[str] = []
+        for company_url in self.company_urls:
+            result = self._seed_sitemaps_for(company_url)
+            created.extend(result["seeded"])
+            notes.append(result["note"])
+        self.write_catalog()
+        return {"seeded": created, "note": "; ".join(notes)}
+
+    def _seed_sitemaps_for(self, company_url: str) -> dict[str, Any]:
+        parsed = urlparse(company_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
         declared = [f"{base}/sitemap.xml"]
-        note = "robots.txt read"
+        note = "robots.txt read" if len(self.company_urls) == 1 else f"{parsed.netloc}: robots.txt read"
         try:
             robots = self.fetcher(f"{base}/robots.txt", self.policy)
             for line in robots.body.decode("utf-8", errors="replace").splitlines():
                 if line.strip().casefold().startswith("sitemap:"):
                     declared.append(line.split(":", 1)[1].strip())
         except Exception as error:  # an unreadable robots file only removes declared sitemaps
-            note = f"robots.txt unavailable: {error}"
+            note = f"robots.txt unavailable: {error}" if len(self.company_urls) == 1 else f"{parsed.netloc}: robots.txt unavailable: {error}"
         created: list[str] = []
         for value in dict.fromkeys(declared):
             try:
-                canonical = canonicalize_url(value, self.company_url)
+                canonical = canonicalize_url(value, company_url)
             except ValueError:
                 continue
-            if not _same_company_host(canonical, self.company_host):
+            if not _same_company_host(canonical, self.company_hosts):
                 continue
             source, was_created = self.store.add_source(
                 canonical_url=canonical,
@@ -451,7 +488,6 @@ class DiscoveryEngine:
             )
             if was_created:
                 created.append(source["source_id"])
-        self.write_catalog()
         return {"seeded": created, "note": note}
 
     def audit_sitemaps(self, *, refetch: bool) -> dict[str, Any]:
@@ -479,7 +515,7 @@ class DiscoveryEngine:
                     candidate = canonicalize_url(href, inventory["canonical_url"])
                 except ValueError:
                     continue
-                if not discoverable_link(candidate) or not _same_company_host(candidate, self.company_host):
+                if not discoverable_link(candidate) or not _same_company_host(candidate, self.company_hosts):
                     continue
                 listed += 1
                 if candidate in known:
@@ -488,7 +524,7 @@ class DiscoveryEngine:
                     canonical_url=candidate,
                     original_url=href,
                     host_key=host_key(candidate),
-                    channel=classify_channel(candidate, self.company_host),
+                    channel=classify_channel(candidate, self.company_hosts),
                     source_kind=source_kind(candidate),
                     relevance=candidate_relevance(candidate),
                     discovered_from=inventory["source_id"],
@@ -525,7 +561,7 @@ class DiscoveryEngine:
             frontier = [
                 source for source in self.store.sources(statuses={"discovered"})
                 if source["channel"] in {"company_site", "newsroom_blog", "docs_help", "careers", "sitemaps"}
-                and _same_company_host(source["canonical_url"], self.company_host)
+                and _same_company_host(source["canonical_url"], self.company_hosts)
             ]
             if not frontier:
                 break
@@ -609,7 +645,7 @@ class DiscoveryEngine:
                             continue
                         if not discoverable_link(candidate):
                             continue
-                        channel = classify_channel(candidate, self.company_host, anchor)
+                        channel = classify_channel(candidate, self.company_hosts, anchor)
                         if channel == "independent_web":
                             # Arbitrary outbound links are evidence leads, not a license to crawl the web.
                             continue
@@ -639,7 +675,7 @@ class DiscoveryEngine:
                             continue
                         if not discoverable_link(candidate):
                             continue
-                        channel = classify_channel(candidate, self.company_host)
+                        channel = classify_channel(candidate, self.company_hosts)
                         if channel == "independent_web":
                             continue
                         _added, created = self.store.add_source(

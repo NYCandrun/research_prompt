@@ -41,9 +41,10 @@ def _prompt(root: Path, relative: str, task_type: str | None = None, channels: l
 
 
 def store_company_url(root: Path) -> str:
-    from research_control.orchestration import load_state
+    """The company's URL, or every first-party URL when the company publishes on more than one domain."""
+    from research_control.orchestration import first_party
 
-    return str(load_state(root)["company_url"])
+    return ", ".join(first_party(root)[0])
 
 
 def write_packet(root: Path, task: dict[str, Any]) -> dict[str, Any]:

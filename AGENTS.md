@@ -12,6 +12,11 @@ packet only, and no inherited status conversation. The SQLite scheduler, not
 the parent chat, determines the task graph, retries, dependencies, and
 concurrency.
 
+A company with more than one domain of its own (IDEO and IDEO U) is one run:
+`new --url URL --also URL`, one `--also` per extra domain, or mid-run
+`scope add-host --url URL --reason "..."` then `run`; every first-party domain
+is crawled as the company's own words.
+
 Discovery is one task per channel: the runtime crawls `company_site` and audits
 `sitemaps`; each of the other twelve channels gets its own worker. Workers act
 only under a held lease; discovery commands refuse to change a channel whose

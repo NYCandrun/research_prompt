@@ -132,8 +132,40 @@ def _ensure_git(root: Path) -> None:
         raise RuntimeError(f"could not initialize git: {result.stderr.strip()}")
 
 
-def initialize(root: Path, company_url: str) -> dict[str, Any]:
+def _host_of(url: str) -> str:
+    return urlparse(url).netloc.lower().removeprefix("www.")
+
+
+def first_party(root: Path) -> tuple[list[str], list[str]]:
+    """Every URL and host the run treats as the company's own: the main URL plus any added."""
+    state = load_state(root)
+    urls = [str(item) for item in state.get("company_urls") or [state["company_url"]]]
+    hosts = [str(item) for item in state.get("company_hosts") or [state.get("company_host") or _host_of(state["company_url"])]]
+    return urls, hosts
+
+
+def add_first_party_host(root: Path, url: str, reason: str) -> dict[str, Any]:
+    """Add another domain the company itself publishes on (a learning arm, a product brand, a regional site)."""
+    url = validate_url(url)
+    if not reason.strip():
+        raise ValueError("--reason is required: what shows this domain is the company's own")
+    state = load_state(root)
+    urls, hosts = first_party(root)
+    host = _host_of(url)
+    added = host not in hosts
+    if added:
+        urls.append(url)
+        hosts.append(host)
+        state["company_urls"] = urls
+        state["company_hosts"] = hosts
+        save_state(root, state)
+        append_history(root, "first-party-host-added", f"{url}: {reason.strip()}")
+    return {"url": url, "host": host, "added": added, "company_hosts": hosts}
+
+
+def initialize(root: Path, company_url: str, also_urls: list[str] | None = None) -> dict[str, Any]:
     company_url = validate_url(company_url)
+    also = [validate_url(item) for item in (also_urls or [])]
     state_path = root / STATE_PATH
     if state_path.exists():
         state = load_state(root)
@@ -149,13 +181,16 @@ def initialize(root: Path, company_url: str) -> dict[str, Any]:
 
     document = _workflow(root)
     created = utc_now()
-    host = urlparse(company_url).netloc.lower().removeprefix("www.")
+    host = _host_of(company_url)
     slug = re.sub(r"[^a-z0-9]+", "-", host).strip("-") or "company"
+    hosts = list(dict.fromkeys([host, *(_host_of(item) for item in also)]))
     state = {
         "schema_version": "1.0.0",
         "run_id": f"{slug}-{created[:10]}",
         "company_url": company_url,
         "company_host": host,
+        "company_urls": [company_url, *also],
+        "company_hosts": hosts,
         "created_at": created,
         "updated_at": created,
         "status": "running",
@@ -172,7 +207,7 @@ def initialize(root: Path, company_url: str) -> dict[str, Any]:
     atomic_write_text(root / document["global"]["ledger"], "")
     atomic_write_json(root / ACTIVE_PATH, {})
     save_state(root, state)
-    append_history(root, "initialized", f"company_url={company_url}")
+    append_history(root, "initialized", f"company_url={company_url}" + (f" also={', '.join(also)}" if also else ""))
     return state
 
 

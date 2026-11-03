@@ -226,6 +226,10 @@ def _parser() -> argparse.ArgumentParser:
     subparsers.add_parser("preflight", help="verify the copied template and local runtime")
     new = subparsers.add_parser("new", help="provision an isolated run directory and initialize it")
     new.add_argument("--url", required=True)
+    new.add_argument(
+        "--also", action="append", default=[], metavar="URL",
+        help="another domain the company itself publishes on (repeatable), for example its learning arm or a product brand",
+    )
     new.add_argument("--dir", help="run directory (default: runs/<company-host-slug>)")
     resume = subparsers.add_parser("resume", help="restore a run from its run-data branch on the remote and continue it here")
     resume.add_argument("--url", help="the company URL the run was started with (names the run-data branch)")
@@ -319,6 +323,11 @@ def _parser() -> argparse.ArgumentParser:
         "record-edit", help="record an orchestrator's edit of 00-scope.md so tasks that read it keep their results"
     )
     scope_edit.add_argument("--reason", required=True)
+    scope_host = scope_sub.add_parser(
+        "add-host", help="add another domain the company itself publishes on; it is crawled and graded as the company's own words"
+    )
+    scope_host.add_argument("--url", required=True, help="the domain's homepage, for example https://www.ideou.com")
+    scope_host.add_argument("--reason", required=True, help="what shows the domain is the company's own")
     archive_parser = subparsers.add_parser(
         "archive", help="orchestrator: commit the run's sources and outputs to its run-data branch on the remote"
     )
@@ -528,7 +537,7 @@ def main() -> None:
         if args.command == "new":
             run_root = Path(args.dir).resolve() if args.dir else root / RUNS_DIRECTORY / run_slug(args.url)
             provision_run(root, run_root)
-            result = advance(run_root, args.url)
+            result = advance(run_root, args.url, also_urls=args.also)
             relative = os.path.relpath(run_root, Path.cwd())
             _print_json({
                 "run_root": str(run_root),
@@ -638,6 +647,22 @@ def main() -> None:
             from research_control.automatic import RUNTIME_WORKER
             from research_control.triage import RETRIAGE_REQUEST
 
+            if args.scope_command == "add-host":
+                from research_control.orchestration import add_first_party_host
+
+                _require_american(root, [], [args.reason])
+                result = add_first_party_host(root, args.url, args.reason)
+                reopened: list[str] = []
+                if result["added"] and (root / "tools/outputs/runtime.sqlite3").is_file():
+                    with open_runtime(root) as store:
+                        engine = DiscoveryEngine(root, store)
+                        engine.initialize()
+                        for channel in ("company_site", "sitemaps"):
+                            store.set_discovery_channel(channel, "open", f"reopened: first-party domain added: {result['host']}")
+                            reopened.append(channel)
+                        engine.write_catalog()
+                _print_json({**result, "reopened": reopened, "next": "python3 -m research_control run"})
+                return
             if args.scope_command == "record-edit":
                 _require_american(root, ["00-scope.md"])
                 outputs = ["00-scope.md"] + ([RETRIAGE_REQUEST] if (root / RETRIAGE_REQUEST).is_file() else [])

@@ -47,7 +47,9 @@ def open_runtime(root: Path) -> RuntimeStore:
     return store
 
 
-def advance(root: Path, company_url: str | None = None, *, automatic: bool = True) -> dict[str, Any]:
+def advance(
+    root: Path, company_url: str | None = None, *, automatic: bool = True, also_urls: list[str] | None = None
+) -> dict[str, Any]:
     """Advance automatically until worker work, a failed gate, or release.
 
     With ``automatic=False`` the orchestrator plans and writes agent packets but
@@ -58,7 +60,7 @@ def advance(root: Path, company_url: str | None = None, *, automatic: bool = Tru
     if not state_path.is_file():
         if not company_url:
             raise FileNotFoundError("no run exists; pass --url on the first `run` invocation")
-        initialize(root, company_url)
+        initialize(root, company_url, also_urls=also_urls)
     elif company_url and load_state(root)["company_url"] != company_url:
         raise ValueError("existing run uses a different company URL")
     render_workarounds(root)
