@@ -259,6 +259,10 @@ class RuntimeStore:
                 "UPDATE tasks SET attempt_count=(SELECT MAX(attempt) FROM attempts WHERE attempts.task_id=tasks.task_id) "
                 "WHERE attempt_count < (SELECT COALESCE(MAX(attempt), 0) FROM attempts WHERE attempts.task_id=tasks.task_id)"
             )
+        channel_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(discovery_channels)")}
+        if "approaches_tried" not in channel_columns:
+            # A blocked channel records the approaches its worker tried before giving up.
+            self.connection.execute("ALTER TABLE discovery_channels ADD COLUMN approaches_tried TEXT NOT NULL DEFAULT '[]'")
         self.connection.commit()
 
     def initialize(
@@ -1157,7 +1161,7 @@ class RuntimeStore:
         self.event("discovery_pass", channel, {"new_sources": new_sources, "state": state, "evidence": evidence})
         return result
 
-    def set_discovery_channel(self, channel: str, state: str, evidence: str) -> dict[str, Any]:
+    def set_discovery_channel(self, channel: str, state: str, evidence: str, tried: list[str] | None = None) -> dict[str, Any]:
         if state not in DISCOVERY_TERMINAL | {"open"}:
             raise ValueError(f"unsupported discovery state: {state}")
         self.ensure_discovery_channel(channel)
@@ -1169,11 +1173,12 @@ class RuntimeStore:
                     (state, evidence, utc_now(), channel),
                 )
             else:
+                approaches = [str(item) for item in (tried or [])]
                 self.connection.execute(
-                    "UPDATE discovery_channels SET state=?, completion_evidence=?, updated_at=? WHERE channel=?",
-                    (state, evidence, utc_now(), channel),
+                    "UPDATE discovery_channels SET state=?, completion_evidence=?, approaches_tried=?, updated_at=? WHERE channel=?",
+                    (state, evidence, _json(approaches), utc_now(), channel),
                 )
-        self.event("discovery_channel_updated", channel, {"state": state, "evidence": evidence})
+        self.event("discovery_channel_updated", channel, {"state": state, "evidence": evidence, "tried": [str(item) for item in (tried or [])]})
         return self.discovery_channel(channel) or {}
 
     def discovery_channel(self, channel: str) -> dict[str, Any] | None:

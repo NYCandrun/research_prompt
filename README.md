@@ -4,7 +4,9 @@ Give the agent one public company URL. This repository discovers the available
 evidence, plans work from the resulting corpus, and carries the run through a
 cited, visually reviewed company brief, public-evidence brand guide, and four
 evidence-bounded architecture diagrams. Do not ask the user how many pages,
-sources, batches, or workers to use.
+sources, batches, or workers to use. Ask the user only when something is
+genuinely ambiguous for this company, once, with a recommendation, while
+continuing everything that does not depend on the answer.
 
 ## Run it
 
@@ -453,6 +455,38 @@ the size and span of its history, and about a dozen key files) when a fact
 rests on it describing something big or ambitious, to judge whether it was
 built or only started and dropped.
 
+## Research playbook and workaround log
+
+Workers find the data as best they can. `RESEARCH_PLAYBOOK.md` holds, per
+channel, the approach that has worked before (**Try first**) and the
+alternatives (**Then try**). The packet writer copies the relevant sections
+into each discovery, alternate-copies, extraction, and brand brief, so no
+worker reads the playbook itself. A worker works through those approaches and
+its own ideas until something works or five distinct approaches fail. Only
+three things are off-limits: logins or accounts, paying or paywall-removal
+tricks, and live paths that `robots.txt` disallows. The runtime's own capture
+chain (a plain request with retries, then the headless browser) is the first
+approach for every page; the alternate-copies pass is where a worker works the
+rest.
+
+When anything other than **Try first** works, the worker logs it once per
+distinct problem:
+
+```bash
+python3 -m research_control workaround add --task TASK_ID --channel careers \
+  --target "boards.greenhouse.io" --failure "403 from the hosted board" \
+  --tried "rendered board page -> 403" --worked "boards-api JSON with token from embed script" \
+  --items 12 --applies platform --playbook-change "add token-from-embed-script step"
+```
+
+`run` rebuilds `RESEARCH_WORKAROUNDS.md` in the run directory from the log.
+Review it after each run and fold what works into the template's playbook.
+
+A channel or source is blocked only after the approaches fail, and the record
+must list them: `discovery close --state blocked` and
+`discovery alternate --none` both take repeated `--tried "approach -> result"`
+flags and refuse fewer than two.
+
 ## Market and competitors
 
 Every run researches the market and the company's competitors through their
@@ -497,13 +531,25 @@ The runtime reads each admitted repository at its latest commit: the
 description and topics, the file list, and the Markdown and CSV files (README
 first, within a size limit), never other code or history.
 
+The worker registers each competitor it finds (`discovery competitor --name
+NAME --url URL --kind direct|adjacent --reason WHY`) and admits that firm's
+pages with `--subject SLUG`, so the facts extracted from them name the firm in
+`about`. A competitor's docs are admitted only for the competing product,
+about 400 pages at most, with the exclusions named in the evidence. The channel
+cannot close until the registry exists (`--none` records that the evidence
+shows no competitors). Before the competitors file is written, the runtime
+fills `05-synthesis/competitors-matrix-draft.md` from the fact store: one row
+per registered competitor plus the company, six columns, every cell a list of
+fact IDs by source date, and no scores. The writer states the rubric, scores
+from those facts, and marks every judgment as inference.
+
 ## Question-bounded discovery
 
 Discovery has no source-count target in either direction. Scope numbers the
 research questions (`Q1`, `Q2`, ...), starting from the brief's required
 sections, and every later stage is bounded by them.
 
-There is one discovery task per channel, eleven in all:
+There is one discovery task per channel, fourteen in all:
 
 | Channel | Who does it |
 |---|---|
@@ -511,6 +557,7 @@ There is one discovery task per channel, eleven in all:
 | `sitemaps` | runtime: audits every declared sitemap against the catalog |
 | `newsroom_blog`, `docs_help`, `careers`, `code_packages` | one agent worker each, after the crawl, for what the crawl could not reach |
 | `video`, `podcasts`, `social`, `independent_web` | one agent worker each, in parallel with the crawl |
+| `investors`, `people`, `archives` | one agent worker each, in parallel with the crawl: investor evidence (filings, funding, Form D), leadership and roles with dates, and dated archive snapshots of the homepage and top product pages for messaging history |
 | `market_competitors` | one agent worker, in parallel with the crawl: the market, and direct and adjacent competitors found from evidence (shared partner directories, marketplace categories, comparison pages, trade press, the company's own comparisons); direct competitors' GitHub organizations, and the public repositories of their members and contributors that are the firm's work, get a shallow look: the repository's description and topics, the latest commit's file list, and its Markdown and CSV files within a size limit, never other code or history; repositories since deleted are looked up once in the public GitHub event archive, without duplicating live ones |
 
 A search channel closes as `sufficient` when its admitted sources answer the
@@ -713,6 +760,15 @@ but no research gate waits for it, so it runs alongside discovery, capture,
 extraction, synthesis, verification, and review. The brand packet is
 presentation-only: it cannot add facts to the company record or architecture
 model.
+
+## Reference files
+
+Two files are kept for the record and are never loaded into a run:
+`FAILURE_REGISTRY.md`, the numbered failure modes this system guards against
+and where each is enforced, and `docs/legacy-prompt.md`, the full original
+research prompt this runtime was built from. When a run teaches something new,
+add it to the registry and, if it changes how a source is found, to the
+playbook.
 
 ## Research and release contract
 

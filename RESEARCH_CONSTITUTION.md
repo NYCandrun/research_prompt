@@ -100,6 +100,20 @@ captured wholesale. Competitor videos are out except those the
 company embeds. Already captured and verified evidence is never discarded only
 because later scope narrows.
 
+Investor evidence comes from SEC filings, earnings calls, and investor days
+for public companies, and from funding releases, investor posts, founder
+interviews, and Form D filings for private ones. Analyst-only funding claims
+stay unconfirmed until matched by stronger evidence, and funding rounds are
+compared with the company's own raised-to-date boilerplate. People coverage
+captures leadership and the relevant product, engineering, AI, marketing,
+sales, customer, and services leaders with titles and dates, and feeds their
+talks and podcast appearances into media capture. Messaging history uses
+archived snapshots of the homepage and top product pages, about one per
+quarter across the lookback, with dated first-party material filling gaps.
+Each registered competitor's sources carry it as their subject, so its facts
+are filed against it and a script fills the comparison matrix before the
+competitors file is written.
+
 No dedicated secondary-source maximization is required. Relevant secondary
 sources encountered during normal research are retained, and the final brief
 states when first-hand third-party evidence is thin or customer proof is mostly
@@ -121,16 +135,35 @@ Facts supplied directly by the user are preserved verbatim as a Grade-I source
 and as facts with verdict `confirmed (user-provided)`. Do not independently
 check them unless the user asks.
 
-### Public-access boundary
+### Finding the data
 
-Back off when rate limited and log failed access. When an admitted source
-cannot be captured, look for a publicly reachable copy of the same content
-(a wire-service or issuer copy of a release, a syndicated article, the same
-video or episode on another platform, the other party's own announcement)
-before accepting the gap; a page that only summarizes the original is not a
-copy. Try the Wayback Machine once.
-If the network path is blocked or repeatedly fails, stop that channel and use
-dated first-party sources for messaging history.
+Find the data as best you can.
+
+`RESEARCH_PLAYBOOK.md` lists, for each channel, the approach that has worked
+before and the alternatives to try next. The packet writer copies the relevant
+sections into each research worker's brief. Workers start with the first
+approach, work through the alternatives and anything else they can think of,
+and stop only when something works or five distinct approaches have failed.
+They do not judge whether an approach is acceptable. Anything not on the
+off-limits list is allowed.
+
+The off-limits list is short and fixed: no logins or accounts, no payment or
+paywall-removal tricks, and no live paths that `robots.txt` disallows.
+Archived and syndicated copies are fine. A bot challenge counts as a failed
+approach. A rate limit means slow down and return later.
+
+When an admitted source cannot be captured, the alternate-copies pass looks
+for a publicly reachable copy of the same content (a wire-service or issuer
+copy of a release, a syndicated article, the same video or episode on another
+platform, the other party's own announcement, an archived copy) before
+accepting the gap; a page that only summarizes the original is not a copy.
+
+When anything other than the first approach works, the worker logs the
+failure, every approach tried, and exactly what worked with one
+`workaround add` call. `run` renders those entries into
+`RESEARCH_WORKAROUNDS.md` for the user to review and fold into the playbook. A
+channel or source is blocked only after the approaches fail, and the runtime
+rejects a blocked record that lists fewer than two distinct approaches.
 
 URLs on login-walled platforms (LinkedIn, X, Facebook, Instagram, Threads,
 TikTok) are recorded as leads with provenance and are not captured, except
@@ -264,7 +297,8 @@ For recorded events, use the live-event date when known and retain upload date
 as a note. A weak date overlay never overwrites stronger evidence.
 
 Facts whose latest evidence is within the last quarter before the research date
-may be stated plainly as current. Older current-state claims use `as of
+may be stated plainly as current. A separate freshness re-check before the
+brief is skipped when the research completes within one or two days. Older current-state claims use `as of
 <date>`. Flagged facts use `last confirmed <date>` or `possibly retired` and
 are never presented plainly as current.
 

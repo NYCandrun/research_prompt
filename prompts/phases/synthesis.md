@@ -13,7 +13,14 @@ matters.
 Keep aims separate from shipped capabilities, product from staff-delivered
 work, fact from inference, and conflicts visible. Label every interpretation
 `My inference:` with its factual basis. Competitive scores follow the defined
-rubric and disclose material evidence asymmetry. The competitors file covers
+rubric and disclose material evidence asymmetry. The competitors writer starts
+from `05-synthesis/competitors-matrix-draft.md`, which the runtime filled from
+the fact store, and `tools/outputs/competitors.json`: keep the draft's rows and
+columns, state a rubric of five criteria per column (adjust the draft's
+template to the category), score each cell as the count of criteria a P or S
+fact shows, and mark totals and every ahead, level, or behind judgment as
+inference. A row with few placed facts is thin evidence, not a weak
+competitor; say so. The competitors file covers
 the market (its category, size and growth where sourced, buyer spending, and
 direction) and separates direct competitors (same kind of offering, same
 buyers, similar engagement model) from adjacent firms, saying for each why it

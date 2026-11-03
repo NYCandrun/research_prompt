@@ -10,6 +10,7 @@ one produces ``incomplete``, never a complete state.
 from __future__ import annotations
 
 import ipaddress
+import json
 import re
 import socket
 import time
@@ -23,6 +24,8 @@ from urllib.request import Request, build_opener
 
 from research_control.capture import PublicRedirectHandler, USER_AGENT
 from research_control.io import append_jsonl, atomic_write_json, atomic_write_jsonl, atomic_write_text, utc_now, workflow
+from research_control.competitors import MARKET_CHANNEL, registry_exists, subject_metadata
+from research_control.playbook import MIN_TRIED, distinct_tried, require_tried
 from research_control.runtime import DISCOVERY_COMPLETE, DISCOVERY_TERMINAL, RuntimeStore
 from research_control.web_cache import SharedWebCache
 
@@ -38,8 +41,23 @@ DISCOVERY_CHANNELS = (
     "social",
     "code_packages",
     "independent_web",
+    "investors",
+    "people",
+    "archives",
     "market_competitors",
 )
+
+
+def channel_tried(row: dict | None) -> list[str]:
+    """Approaches recorded on a discovery channel row, whatever form the store returned them in."""
+    value = (row or {}).get("approaches_tried")
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    try:
+        loaded = json.loads(value or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [str(item) for item in loaded] if isinstance(loaded, list) else []
 
 TRACKING_PARAMETERS = {
     "fbclid", "gclid", "mc_cid", "mc_eid", "ref", "referrer", "source",
@@ -122,12 +140,13 @@ def coverage_markdown(channels: list[dict[str, Any]]) -> str:
         "# Discovery coverage", "",
         "Discovery has no source-count target. The runtime crawls the company site to a fixed point; "
         "search channels close as `sufficient` for named research questions or `saturated`.", "",
-        "| Channel | State | Passes | New sources | Evidence |", "|---|---|---:|---:|---|",
+        "| Channel | State | Passes | New sources | Evidence | Approaches tried |", "|---|---|---:|---:|---|---|",
     ]
     for item in channels:
         evidence = str(item.get("completion_evidence") or "").replace("|", "\\|")
+        tried = "; ".join(channel_tried(item)).replace("|", "\\|")
         lines.append(
-            f"| {item['channel']} | {item['state']} | {item['total_passes']} | {item['total_new_sources']} | {evidence} |"
+            f"| {item['channel']} | {item['state']} | {item['total_passes']} | {item['total_new_sources']} | {evidence} | {tried} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -167,6 +186,12 @@ def classify_channel(url: str, company_host: str, anchor_text: str = "") -> str:
     parsed = urlparse(url)
     host = host_key(url)
     signal = f"{host} {parsed.path.casefold()} {anchor_text.casefold()}"
+    if "web.archive.org" in host or (host == "archive.org" and "/web/" in parsed.path):
+        return "archives"
+    if "sec.gov" in host or host.startswith(("investors.", "ir.")) or re.search(r"/(investors?|ir|investor-relations)(/|$)", parsed.path.casefold()):
+        return "investors"
+    if re.search(r"/(team|leadership|our-team|our-people|people|management|board-of-directors)(/|$)", parsed.path.casefold()):
+        return "people"
     if any(name in host for name in ("youtube.com", "youtu.be", "vimeo.com", "loom.com", "wistia.com")):
         return "video"
     if any(name in host for name in ("linkedin.com", "twitter.com", "x.com", "facebook.com", "instagram.com", "threads.net")):
@@ -333,9 +358,11 @@ class DiscoveryEngine:
         evidence: str,
         depth: int = 0,
         record_pass: bool = True,
+        subject: str | None = None,
     ) -> dict[str, Any]:
         if channel not in DISCOVERY_CHANNELS:
             raise ValueError(f"unknown discovery channel: {channel}")
+        subject_fields = subject_metadata(self.root, subject) if subject else None
         created: list[str] = []
         rejected: list[dict[str, str]] = []
         for value in urls:
@@ -354,7 +381,13 @@ class DiscoveryEngine:
                     relevance=candidate_relevance(canonical, selected_channel),
                     discovered_from=discovered_from,
                     depth=depth,
+                    metadata=subject_fields,
                 )
+                if subject_fields and not was_created:
+                    # A URL the crawl or another channel found first still gets the competitor tag.
+                    self.store.update_source(
+                        source["source_id"], metadata={**(source.get("metadata") or {}), **subject_fields}
+                    )
                 self.shared_cache.note_url(
                     canonical,
                     consumer=f"capture.discover.{channel.replace('_', '-')}",
@@ -648,10 +681,15 @@ class DiscoveryEngine:
             "channel_state": channel,
         }
 
-    def close_channel(self, channel: str, state: str, evidence: str) -> dict[str, Any]:
+    def close_channel(self, channel: str, state: str, evidence: str, tried: list[str] | None = None) -> dict[str, Any]:
         if state not in DISCOVERY_TERMINAL:
             raise ValueError(
                 "channel may only be closed as saturated, sufficient, not_applicable, blocked, or incomplete"
+            )
+        approaches = require_tried(tried, channel) if state == "blocked" else distinct_tried(tried)
+        if channel == MARKET_CHANNEL and state in {"sufficient", "saturated"} and not registry_exists(self.root):
+            raise ValueError(
+                f"{channel}: register each competitor with `discovery competitor` (or record `--none`) before closing"
             )
         if state == "sufficient":
             current = self.store.discovery_channel(channel)
@@ -669,11 +707,11 @@ class DiscoveryEngine:
                     f"{channel}: saturation requires {self.policy.saturation_passes} recorded empty passes; "
                     "use `discovery add` for each materially different pass"
                 )
-        result = self.store.set_discovery_channel(channel, state, evidence)
+        result = self.store.set_discovery_channel(channel, state, evidence, approaches)
         self.write_catalog()
         return result
 
-    def add_alternate(self, source_id: str, url: str | None, evidence: str) -> dict[str, Any]:
+    def add_alternate(self, source_id: str, url: str | None, evidence: str, tried: list[str] | None = None) -> dict[str, Any]:
         """Record a public alternate copy of a blocked source, or that none exists.
 
         The alternate joins the original's channel without reopening it: it is the
@@ -705,6 +743,7 @@ class DiscoveryEngine:
             row.update({"outcome": "admitted", "alternate_source_id": alternate["source_id"], "alternate_url": canonical, "new": created})
         else:
             row["outcome"] = "none_found"
+            row["tried"] = require_tried(tried, source_id)
         append_jsonl(self.root / ALTERNATES_PART, row)
         self.write_catalog()
         return row

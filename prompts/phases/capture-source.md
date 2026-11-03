@@ -27,3 +27,9 @@ If access is prohibited or fails after the permitted retry, create the assigned
 source directory with a nonempty `BLOCKED.txt` and write a receipt with
 `status: blocked`, the reason, access method, and evidence. Do not edit the
 canonical source manifest.
+
+The runtime's chain is the playbook's first approach for a page: a plain
+request with retries, then the headless browser, then a blocked receipt with
+the concrete refusal. A blocked source then goes to the alternate-copies pass,
+where a worker works the rest of the playbook before recording that no public
+copy exists.

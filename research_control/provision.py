@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-TEMPLATE_FILES = ("README.md", "RESEARCH_CONSTITUTION.md", "WORKFLOW.yaml", "pyproject.toml")
+TEMPLATE_FILES = ("README.md", "RESEARCH_CONSTITUTION.md", "WORKFLOW.yaml", "RESEARCH_PLAYBOOK.md", "pyproject.toml")
 TEMPLATE_DIRECTORIES = ("prompts", "research_control", "tools")
 IGNORED = shutil.ignore_patterns("__pycache__", "*.pyc", "outputs", "tests")
 RUNS_DIRECTORY = "runs"

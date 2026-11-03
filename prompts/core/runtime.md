@@ -53,6 +53,21 @@ Back off when rate limited and record blocked items. When you use a browser
 desktop-sized window (for example 1440x900, not mobile) so you see the desktop
 layout and content, unless the task asks for a mobile view.
 
+## Getting the data
+<!-- only: source_discovery, alternate_copies, brand_guide, scope, capture, extraction -->
+
+Find the data as best you can. Your brief carries the playbook sections for
+your task. Start with **Try first**, then **Then try**, then anything else you
+can think of, until something works or five distinct approaches have failed.
+Anything not on the off-limits list is allowed: no logins or accounts, no
+paying or paywall-removal tricks, no live paths that `robots.txt` disallows.
+Do not stop to judge an approach. A bot challenge is a failed approach, so
+move on. When rate limited, slow down and come back later.
+
+When anything other than **Try first** works, log it once per distinct problem
+with `python3 -m research_control workaround add ...`. A blocked record must
+list the approaches tried; the runtime rejects one with fewer than two.
+
 ## American English
 
 Write everything you author in American English, in spelling and in

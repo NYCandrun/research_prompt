@@ -18,7 +18,10 @@ do not read the fact store or the captures whole.
   lost), with the IDs.
 - `06-checks/filter-spot-check.md`: for each sampled filed fact, whether the
   quote is in the captured text, the claim stays within the quote, and the
-  question it was filed under fits.
+  question it was filed under fits. The sample holds at least 40 filed facts.
+  When more than 5% of them are wrong, say so in the first line of the file
+  with the rate; the orchestrator then reruns filing over the affected
+  candidates before the facts gate.
 
 Give each file a table with one row per sampled item, the counts checked and
 wrong, and a line for each problem naming the candidate or fact ID and what is

@@ -26,7 +26,7 @@ every ready packet until exact-artifact release passes.
   beyond these entries. When a worker reports something for you, act on it; a
   small correction to a finished output is recorded with `work record-edit`.
   Discovery is one task per channel: the runtime handles `company_site` and
-  `sitemaps`; each of the other nine channels gets its own worker.
+  `sitemaps`; each of the other twelve channels gets its own worker.
 - Workers act only under a held lease: claim and start before working, succeed
   only after outputs exist. Never let a worker run discovery or capture
   commands for a task it has not claimed. To add work to a closed channel,
@@ -36,6 +36,11 @@ every ready packet until exact-artifact release passes.
   alternate-copies pass once page captures finish (and a later pass for anything
   blocked after it), and its worker records a public copy of the same content,
   or that none exists, for every blocked source in its list.
+- Ask the user only when something is genuinely ambiguous for this company,
+  once, with a recommendation, while continuing everything that does not
+  depend on the answer.
+- After the run, read `RESEARCH_WORKAROUNDS.md` in the run directory and fold
+  what worked into the template's `RESEARCH_PLAYBOOK.md`.
 - Do not invent source, page, batch, or worker quotas. Discovery channels close
   as `sufficient` against the numbered research questions or as `saturated`;
   triage then bounds extraction by those questions.

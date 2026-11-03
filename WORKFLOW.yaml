@@ -15,6 +15,10 @@
   "global": {
     "fail_closed": true,
     "ledger": "tools/outputs/worker-ledger.jsonl",
+    "research_playbook": "RESEARCH_PLAYBOOK.md",
+    "workaround_log": "tools/outputs/workarounds.jsonl",
+    "workaround_report": "RESEARCH_WORKAROUNDS.md",
+    "competitor_registry": "tools/outputs/competitors.json",
     "gate_directory": "tools/outputs/gates",
     "reconciliation_directory": "tools/outputs/reconciliation",
     "validation_directory": "tools/outputs/validations",
@@ -61,7 +65,7 @@
       "expired_lease_action": "targeted_retry"
     },
     "discovery": {
-      "required_channels": ["company_site", "sitemaps", "newsroom_blog", "docs_help", "careers", "video", "podcasts", "social", "code_packages", "independent_web", "market_competitors"],
+      "required_channels": ["company_site", "sitemaps", "newsroom_blog", "docs_help", "careers", "video", "podcasts", "social", "code_packages", "independent_web", "investors", "people", "archives", "market_competitors"],
       "first_party": "runtime crawl of the company host and its sitemaps to a fixed point",
       "search_channels": "close as sufficient when the admitted sources answer the named research questions, or saturated after repeated empty passes",
       "lead_only_hosts": "login-walled platforms are recorded as leads with provenance and are not captured",
@@ -222,7 +226,7 @@
         {"id": "write-product-map", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/product-map.md"], "independent": true, "exclusive_inputs": false},
         {"id": "write-offering", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/offering.md"], "independent": true, "exclusive_inputs": false},
         {"id": "write-customers-proof", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/customers-proof.md"], "independent": true, "exclusive_inputs": false},
-        {"id": "write-competitors", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/competitors.md"], "independent": true, "exclusive_inputs": false},
+        {"id": "write-competitors", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/competitors.md"], "independent": true, "exclusive_inputs": false, "inputs": [{"id": "fact_digests", "path": "tools/digests/*.md", "required": true}, {"id": "timeline_drafts", "path": "03-timelines/*.md", "required": true}, {"id": "currency_file", "path": "tools/outputs/currency.csv", "required": true}, {"id": "competitor_matrix_draft", "path": "05-synthesis/competitors-matrix-draft.md", "required": false}, {"id": "competitor_registry", "path": "tools/outputs/competitors.json", "required": false}]},
         {"id": "write-glossary", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/glossary.md"], "independent": true, "exclusive_inputs": false},
         {"id": "write-messaging-timeline", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/messaging-timeline.md"], "independent": true, "exclusive_inputs": false},
         {"id": "write-organization", "task_type": "synthesis", "depends_on": ["groundwork", "currency-review"], "prompt": "prompts/phases/synthesis.md", "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/core/writing.md"], "outputs": ["05-synthesis/organization.md"], "independent": true, "exclusive_inputs": false},

@@ -31,6 +31,10 @@ Good alternate copies:
 Not alternates: pages that only summarize, quote from, or comment on the
 original; search-result pages; cache mirrors; paywall-removal services.
 
+Before recording that none exists, work the playbook sections in this brief:
+the general list, archives, and syndicated copies, up to five distinct
+approaches. Log what worked with `workaround add`.
+
 Verify each candidate is publicly reachable before recording it (for example
 `python3 -m research_control web fetch --url URL --consumer TASK_ID --purpose research_discovery`,
 which reports the HTTP status). Check the source catalog
@@ -43,8 +47,11 @@ Record one outcome per blocked source, under your claim:
 python3 -m research_control discovery alternate --source-id SRC-... \
   --url ALTERNATE_URL --evidence "how it was found and why it is the same content"
 python3 -m research_control discovery alternate --source-id SRC-... \
-  --none --evidence "what was searched and why nothing qualifies"
+  --none --evidence "what was searched and why nothing qualifies" \
+  --tried "approach -> result" --tried "approach -> result"
 ```
+
+`--none` is refused with fewer than two distinct approaches tried.
 
 A recorded alternate joins the original's channel without reopening it, and
 the runtime captures it automatically. The task is complete only when every

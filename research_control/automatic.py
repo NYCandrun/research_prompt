@@ -109,6 +109,13 @@ def _capture(root: Path, store: RuntimeStore, task: dict[str, Any]) -> dict[str,
     return receipt
 
 
+def _competitor_matrix(root: Path) -> dict[str, Any]:
+    from research_control.competitor_matrix import build_matrix
+    from research_control.orchestration import load_state
+
+    return build_matrix(root, company_name=str(load_state(root).get("company_host", "")))
+
+
 HANDLERS: dict[str, Callable[[Path, RuntimeStore, dict[str, Any]], Any]] = {
     "source_discovery": _first_party_discovery,
     "discovery_reducer": lambda root, store, _task: reduce_discovery(root, store),
@@ -121,7 +128,9 @@ HANDLERS: dict[str, Callable[[Path, RuntimeStore, dict[str, Any]], Any]] = {
     ]),
     "supplement_reducer": lambda root, _store, task: reduce_supplement(root, task["metadata"]["identifier"]),
     "filing": lambda root, _store, _task: file_candidates(root),
-    "claim_digests": lambda root, _store, _task: {"digests": write_claim_digests(root, CLAIM_DIGESTS)},
+    "claim_digests": lambda root, _store, _task: {
+        "digests": write_claim_digests(root, CLAIM_DIGESTS), "competitor_matrix": _competitor_matrix(root),
+    },
     "consistency_check": lambda root, _store, _task: write_relationship_report(root),
     "report_outline": lambda root, _store, _task: write_report_outline(root),
     "extraction_reducer": lambda root, store, _task: reduce_extraction_parts(root, [

@@ -125,8 +125,17 @@ Admit what answers a question, not everything that exists:
   A direct competitor sells the same kind of offering to the same buyers in a
   similar way; an adjacent firm (a global consulting firm, a platform vendor,
   an AI lab moving into services) competes for some of the same budget. Find
-  the direct competitors first, and record which each firm is and why. For
-  each direct competitor, admit the pages that establish its positioning and
+  the direct competitors first, and record which each firm is and why.
+  Register each one as you find it with `discovery competitor --name NAME
+  --url URL --kind direct|adjacent --reason WHY`, and admit its pages with
+  `discovery add --channel market_competitors --subject SLUG ...` so the
+  facts extracted from them are filed against that firm. A competitor's docs
+  or knowledge base: only the pages about the competing product, about 400
+  pages at most, with what was left out named in the evidence. When the
+  evidence shows no competitors, record `discovery competitor --none
+  --evidence WHAT_WAS_SEARCHED`. The channel cannot close as sufficient or
+  saturated before one of these is recorded.
+  For each direct competitor, admit the pages that establish its positioning and
   offering, engagement model and packaging, pricing or rate signals, partner
   tiers, named customers or case studies, size and funding (headcount, rounds,
   acquisitions), and recent launches with dates. For the market, admit what
@@ -283,6 +292,22 @@ Admit what answers a question, not everything that exists:
   the publisher's episode page, the direct audio enclosure from its RSS feed,
   or a publisher-hosted player page.
 
+- Investors (`investors`): filings, earnings calls, and investor-day material
+  for a public company; funding releases, investor posts, founder interviews,
+  and Form D filings for a private one. Analyst-only funding claims stay
+  unconfirmed until matched by stronger evidence; compare rounds with the
+  company's own "raised to date" boilerplate. Check legal entities carefully.
+- People (`people`): leadership and the relevant product, engineering, AI,
+  marketing, sales, customer, and services leaders, with titles and dates,
+  from the company's pages, event bios, bylines, and hire announcements.
+  Record roles, never personal details. Feed talks and podcast appearances to
+  the video and podcast channels.
+- Messaging history (`archives`): one Wayback snapshot per quarter across the
+  lookback of the homepage and top product pages, admitted as raw `id_`
+  snapshot URLs; the runtime dates each from the archive timestamp. When
+  Wayback fails, the playbook in this brief lists the alternatives; fill gaps
+  from dated first-party material.
+
 Close each assigned channel with one terminal state and specific evidence:
 
 - `sufficient`: the admitted sources answer the channel's share of the named
@@ -292,7 +317,9 @@ Close each assigned channel with one terminal state and specific evidence:
 - `saturated`: two materially different passes in a row added nothing.
 - `not_applicable`: the channel does not exist for this company, with the
   searches that establish that.
-- `blocked`: access is prohibited or failing, with the concrete failure.
+- `blocked`: access failed after the playbook's approaches, with the concrete
+  failure and each approach tried (`--tried "approach -> result"`, at least
+  two; the runtime refuses fewer).
 
 ```bash
 python3 -m research_control discovery close \

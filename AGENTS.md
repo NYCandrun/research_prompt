@@ -10,7 +10,7 @@ the parent chat, determines the task graph, retries, dependencies, and
 concurrency.
 
 Discovery is one task per channel: the runtime crawls `company_site` and audits
-`sitemaps`; each of the other eight channels gets its own worker. Workers act
+`sitemaps`; each of the other twelve channels gets its own worker. Workers act
 only under a held lease; discovery commands refuse to change a channel whose
 task is not claimed. To add work to a closed channel, reopen it with
 `discovery reopen` and rerun `run`. Runtime-owned work (crawl, sitemap audit,
@@ -19,7 +19,11 @@ Concurrency is the orchestrator's call: tune agent dispatch and runtime limits
 to whatever is most efficient in the current environment; the configured
 numbers are defaults.
 
-Do not ask the user for source, page, batch, or worker counts. Search channels
+Do not ask the user for source, page, batch, or worker counts. Ask the user
+only when something is genuinely ambiguous for this company, once, with a
+recommendation, while continuing everything that does not depend on the
+answer. After the run, read `RESEARCH_WORKAROUNDS.md` in the run directory and
+fold what worked into the template's `RESEARCH_PLAYBOOK.md`. Search channels
 close as `sufficient` against the numbered research questions in `00-scope.md`
 or as `saturated`; triage bounds extraction by the same questions. Numeric
 limits are safety breakers and must produce incomplete status when reached.

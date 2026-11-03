@@ -20,6 +20,7 @@ from research_control.io import (
     load_jsonl,
     utc_now,
 )
+from research_control.playbook import MIN_TRIED, distinct_tried
 from research_control.runtime import DISCOVERY_TERMINAL, UNCAPTURED_RELEVANCE, RuntimeStore
 from research_control.triage import excluded_dispositions
 from research_control.filing import fact_key
@@ -64,6 +65,8 @@ def reduce_discovery(root: Path, store: RuntimeStore) -> dict[str, Any]:
             )
         if not str(part.get("evidence", "")).strip():
             failures.append(f"{item['channel']}: receipt lacks completion evidence")
+        if item["state"] == "blocked" and len(distinct_tried(part.get("tried"))) < MIN_TRIED:
+            failures.append(f"{item['channel']}: blocked receipt lists fewer than {MIN_TRIED} approaches tried")
     if failures:
         raise ValueError("invalid discovery receipts: " + "; ".join(failures))
     result = {

@@ -13,8 +13,9 @@ by a zero-padded worker-local sequence. Each candidate contains `topic`,
 `claim`, `quote`, `source_id`, `location`,
 `source_date`, `grade`, `about`, `said_by`, and `notes`. Write `claim` and
 `notes` in American English even when the source is British (the claim says
-"program" where the quote says "programme"); the `quote` keeps the source's
-exact words. Use only the assigned
+"program" where the quote says "programme"); the `quote` keeps the source's exact words. `about` names the company unless
+the input carries a `subject`: then it names that competitor exactly as the
+subject gives it, and `said_by` names who authored the source. Use only the assigned
 topic/output and ID bounds. Self-check every quote against the original capture
 before completing the source.
 

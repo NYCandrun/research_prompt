@@ -25,7 +25,7 @@ CANDIDATES = "tools/candidates/all.jsonl"
 DISPOSITIONS = "tools/outputs/filing-dispositions.jsonl"
 SCRIPT_AUDIT = "06-checks/script-audits.md"
 SPOT_SAMPLE = "tools/outputs/filing-spot-sample.json"
-SPOT_SAMPLE_SIZE = 20
+SPOT_SAMPLE_SIZE = 40
 COLUMNS = (
     "Fact ID", "Claim", "Verbatim quote", "Source ID", "Location", "Source date", "Grade", "Topics", "About",
     "Said by", "Verdict", "Candidate", "Notes", "Conflict group", "Cross-source repeats",

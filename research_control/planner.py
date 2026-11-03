@@ -518,6 +518,7 @@ class AdaptivePlanner:
                         "url": source["canonical_url"],
                         "channel": source["channel"],
                         "source_kind": source["source_kind"],
+                        "subject": str((source.get("metadata") or {}).get("subject_name") or ""),
                     }],
                     outputs=[directory, receipt],
                     prompt_files=["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/phases/capture-source.md"],
@@ -1053,6 +1054,9 @@ class AdaptivePlanner:
                     "estimated_tokens": end - start, "token_start": start, "token_end": end,
                     "sha256": digest, **({} if legacy else {"cut": "sections"}),
                 })
+        for item in slices:
+            metadata = (sources.get(item["source_id"]) or {}).get("metadata") or {}
+            item["subject"] = str(metadata.get("subject_name") or "")
         return slices
 
     def _unchanged_batches(self, slices: list[dict[str, Any]]) -> tuple[list[str], list[dict[str, Any]]]:

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from research_control import PASS
+from research_control.workarounds import render_workarounds
 from research_control.checks import check_phase, run_validator
 from research_control.dispatch import emit_ready_packets
 from research_control.discovery import ALTERNATES_PART, BLOCKED_SOURCES_LIST
@@ -60,6 +61,7 @@ def advance(root: Path, company_url: str | None = None, *, automatic: bool = Tru
         initialize(root, company_url)
     elif company_url and load_state(root)["company_url"] != company_url:
         raise ValueError("existing run uses a different company URL")
+    render_workarounds(root)
 
     with open_runtime(root) as store:
         recovered = store.recover_expired()

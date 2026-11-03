@@ -15,7 +15,9 @@ from research_control import PASS, __version__
 from research_control.adaptive import advance, complete_work, open_runtime, requeue_captures, retry_media, runtime_status
 from research_control.capture import capture_source_part, capture_url
 from research_control.checks import check_phase
-from research_control.discovery import DISCOVERY_CHANNELS, DiscoveryEngine, DiscoveryPolicy, public_fetch
+from research_control.competitors import MARKET_CHANNEL, register_competitor, register_none
+from research_control.workarounds import APPLIES, add_workaround, render_workarounds
+from research_control.discovery import channel_tried, DISCOVERY_CHANNELS, DiscoveryEngine, DiscoveryPolicy, public_fetch
 from research_control.gates.release import check_release
 from research_control.io import atomic_write_json, load_json, utc_now, workflow
 from research_control.orchestration import (
@@ -110,6 +112,7 @@ def preflight(root: Path) -> int:
         "README.md",
         "RESEARCH_CONSTITUTION.md",
         "WORKFLOW.yaml",
+        "RESEARCH_PLAYBOOK.md",
         "prompts/core/runtime.md",
         "prompts/core/evidence.md",
         "prompts/core/writing.md",
@@ -386,6 +389,18 @@ def _parser() -> argparse.ArgumentParser:
     capture.add_argument("--title")
     capture.add_argument("--publisher")
 
+    workaround = subparsers.add_parser("workaround", help="log a research workaround that worked, or rebuild the report")
+    workaround_sub = workaround.add_subparsers(dest="workaround_command", required=True)
+    workaround_add = workaround_sub.add_parser("add", help="one entry per distinct problem")
+    for name in ("task", "channel", "target", "failure", "worked"):
+        workaround_add.add_argument(f"--{name}", required=True)
+    workaround_add.add_argument("--tried", action="append", default=[], help="'approach -> result' that did not work; repeatable")
+    workaround_add.add_argument("--items", type=int, default=1, help="how many items this fix solved")
+    workaround_add.add_argument("--applies", choices=APPLIES, default="host")
+    workaround_add.add_argument("--playbook-change", default="")
+    workaround_add.add_argument("--worker-id", default="")
+    workaround_sub.add_parser("report", help="rebuild RESEARCH_WORKAROUNDS.md from the log")
+
     discovery = subparsers.add_parser("discovery", help="record saturation-based source discovery")
     discovery_sub = discovery.add_subparsers(dest="discovery_command", required=True)
     discovery_sub.add_parser("crawl", help="crawl the public first-party frontier to saturation")
@@ -394,10 +409,12 @@ def _parser() -> argparse.ArgumentParser:
     discovery_add.add_argument("--url", action="append", default=[])
     discovery_add.add_argument("--evidence", required=True)
     discovery_add.add_argument("--discovered-from", default="agent-search")
+    discovery_add.add_argument("--subject", help="competitor slug (registered with `discovery competitor`) the URLs are about")
     discovery_close = discovery_sub.add_parser("close", help="close a channel with explicit evidence")
     discovery_close.add_argument("--channel", required=True, choices=DISCOVERY_CHANNELS)
     discovery_close.add_argument("--state", required=True, choices=["saturated", "sufficient", "not_applicable", "blocked", "incomplete"])
     discovery_close.add_argument("--evidence", required=True)
+    discovery_close.add_argument("--tried", action="append", default=[], help="'approach -> result'; at least two for --state blocked")
     discovery_alternate = discovery_sub.add_parser(
         "alternate", help="record a public alternate copy of a blocked source, or --none when there is none"
     )
@@ -405,6 +422,18 @@ def _parser() -> argparse.ArgumentParser:
     discovery_alternate.add_argument("--url")
     discovery_alternate.add_argument("--none", action="store_true", help="no public alternate copy exists")
     discovery_alternate.add_argument("--evidence", required=True)
+    discovery_alternate.add_argument("--tried", action="append", default=[], help="'approach -> result'; at least two with --none")
+    discovery_competitor = discovery_sub.add_parser(
+        "competitor", help="register a competitor (market_competitors worker), or --none when the evidence shows no competitors"
+    )
+    discovery_competitor.add_argument("--name")
+    discovery_competitor.add_argument("--url")
+    discovery_competitor.add_argument("--kind", choices=["direct", "adjacent", "watch"], default="direct")
+    discovery_competitor.add_argument("--reason", default="")
+    discovery_competitor.add_argument("--competing-product", default="")
+    discovery_competitor.add_argument("--none", action="store_true", help="no competitors exist; --evidence names the searches")
+    discovery_competitor.add_argument("--evidence", default="")
+    discovery_competitor.add_argument("--task", default="", help="the market_competitors task ID recording this")
     discovery_reopen = discovery_sub.add_parser("reopen", help="reopen a closed channel after a scope change")
     discovery_reopen.add_argument("--channel", required=True, choices=DISCOVERY_CHANNELS)
     discovery_reopen.add_argument("--evidence", required=True)
@@ -713,12 +742,32 @@ def main() -> None:
         if args.command == "capture":
             _print_json(capture_url(root, url=args.url, source_id=args.source_id, grade=args.grade, title=args.title, publisher=args.publisher))
             return
+        if args.command == "workaround":
+            if args.workaround_command == "add":
+                _print_json(add_workaround(
+                    root, task_id=args.task, channel=args.channel, target=args.target, failure=args.failure,
+                    tried=args.tried, worked=args.worked, items=args.items, applies=args.applies,
+                    playbook_change=args.playbook_change, worker_id=args.worker_id,
+                ))
+            else:
+                _print_json({"status": "rendered", "report": str(render_workarounds(root).relative_to(root))})
+            return
         if args.command == "discovery":
             with open_runtime(root) as store:
                 engine = DiscoveryEngine(root, store)
                 engine.initialize()
                 if args.discovery_command in WORKER_DISCOVERY_COMMANDS:
                     _require_discovery_lease(store, args.channel)
+                if args.discovery_command == "competitor":
+                    _require_discovery_lease(store, MARKET_CHANNEL)
+                    if args.none:
+                        _print_json(register_none(root, evidence=args.evidence, task_id=args.task))
+                    else:
+                        _print_json(register_competitor(
+                            root, name=args.name or "", url=args.url or "", kind=args.kind, reason=args.reason,
+                            competing_product=args.competing_product, task_id=args.task,
+                        ))
+                    return
                 if args.discovery_command == "alternate":
                     if not any(
                         task["task_type"] == "alternate_copies"
@@ -738,12 +787,12 @@ def main() -> None:
                 elif args.discovery_command == "add":
                     _print_json(engine.add_candidates(
                         args.channel, args.url, discovered_from=args.discovered_from,
-                        evidence=args.evidence, record_pass=True,
+                        evidence=args.evidence, record_pass=True, subject=args.subject,
                     ))
                 elif args.discovery_command == "close":
-                    _print_json(engine.close_channel(args.channel, args.state, args.evidence))
+                    _print_json(engine.close_channel(args.channel, args.state, args.evidence, tried=args.tried))
                 elif args.discovery_command == "alternate":
-                    _print_json(engine.add_alternate(args.source_id, args.url, args.evidence))
+                    _print_json(engine.add_alternate(args.source_id, args.url, args.evidence, tried=args.tried))
                 elif args.discovery_command == "reopen":
                     _print_json(engine.reopen_channel(args.channel, args.evidence))
                 elif args.discovery_command == "retry":
@@ -763,6 +812,7 @@ def main() -> None:
                         "status": channel["state"], "passes": channel["total_passes"],
                         "new_sources": channel["total_new_sources"],
                         "evidence": channel["completion_evidence"],
+                        "tried": channel_tried(channel),
                     }
                     path = root / "tools/outputs/worker-parts/discovery" / f"{args.channel.replace('_', '-')}.json"
                     atomic_write_json(path, receipt)
