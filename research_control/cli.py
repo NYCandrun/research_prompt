@@ -13,7 +13,7 @@ from research_control import PASS, __version__
 from research_control.adaptive import advance, complete_work, open_runtime, runtime_status
 from research_control.capture import blocked_source_part, capture_source_part, capture_url
 from research_control.checks import check_phase
-from research_control.discovery import DISCOVERY_CHANNELS, DiscoveryEngine, DiscoveryPolicy, channel_tried, public_fetch
+from research_control.discovery import DISCOVERY_CHANNELS, DiscoveryEngine, DiscoveryPolicy, channel_slug, channel_tried, is_channel, public_fetch
 from research_control.gates.release import check_release
 from research_control.io import workflow
 from research_control.orchestration import (
@@ -36,6 +36,12 @@ from research_control.workarounds import APPLIES, add_workaround, render_workaro
 
 def _root(value: str | Path) -> Path:
     return Path(value).resolve()
+
+
+def _channel(value: str) -> str:
+    if not is_channel(value):
+        raise argparse.ArgumentTypeError(f"unknown channel {value!r}; use one of {', '.join(DISCOVERY_CHANNELS)} or competitor:<slug>")
+    return value
 
 
 def _print_json(value: Any) -> None:
@@ -63,6 +69,7 @@ def preflight(root: Path) -> int:
         "prompts/core/evidence.md",
         "prompts/core/writing.md",
         "prompts/phases/discovery.md",
+        "prompts/phases/discovery-competitor.md",
         "prompts/phases/discovery-reducer.md",
         "prompts/phases/capture-source.md",
         "prompts/phases/capture-reducer.md",
@@ -206,17 +213,17 @@ def _parser() -> argparse.ArgumentParser:
     discovery_sub = discovery.add_subparsers(dest="discovery_command", required=True)
     discovery_sub.add_parser("crawl", help="crawl the public first-party frontier to saturation")
     discovery_add = discovery_sub.add_parser("add", help="record one discovery pass and its newly found URLs")
-    discovery_add.add_argument("--channel", required=True, choices=DISCOVERY_CHANNELS)
+    discovery_add.add_argument("--channel", required=True, type=_channel, help="a standard channel or competitor:<slug>")
     discovery_add.add_argument("--url", action="append", default=[])
     discovery_add.add_argument("--evidence", required=True)
     discovery_add.add_argument("--discovered-from", default="agent-search")
     discovery_close = discovery_sub.add_parser("close", help="close a channel with explicit evidence")
-    discovery_close.add_argument("--channel", required=True, choices=DISCOVERY_CHANNELS)
+    discovery_close.add_argument("--channel", required=True, type=_channel)
     discovery_close.add_argument("--state", required=True, choices=["saturated", "not_applicable", "blocked", "incomplete"])
     discovery_close.add_argument("--evidence", required=True)
     discovery_close.add_argument("--tried", action="append", default=[], help="'approach -> result'; at least two for --state blocked")
     discovery_receipt = discovery_sub.add_parser("receipt", help="write the current channel's worker receipt")
-    discovery_receipt.add_argument("--channel", required=True, choices=DISCOVERY_CHANNELS)
+    discovery_receipt.add_argument("--channel", required=True, type=_channel)
 
     source = subparsers.add_parser("source", help="capture one scheduler-owned source into an isolated worker part")
     source_sub = source.add_subparsers(dest="source_command", required=True)
@@ -362,7 +369,7 @@ def main() -> None:
                         "evidence": channel["completion_evidence"],
                         "tried": channel_tried(channel),
                     }
-                    path = root / "tools/outputs/worker-parts/discovery" / f"{args.channel.replace('_', '-')}.json"
+                    path = root / "tools/outputs/worker-parts/discovery" / f"{channel_slug(args.channel)}.json"
                     from research_control.io import atomic_write_json
                     atomic_write_json(path, receipt)
                     _print_json({**receipt, "receipt": str(path.relative_to(root))})

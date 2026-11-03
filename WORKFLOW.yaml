@@ -63,7 +63,7 @@
       "expired_lease_action": "targeted_retry"
     },
     "discovery": {
-      "required_channels": ["company_site", "sitemaps", "newsroom_blog", "docs_help", "careers", "video", "podcasts", "social", "code_packages", "independent_web"],
+      "required_channels": ["company_site", "sitemaps", "newsroom_blog", "docs_help", "careers", "video", "podcasts", "social", "code_packages", "investors", "people", "archives", "independent_web"],
       "saturation_empty_passes": 2,
       "min_host_interval_seconds": 1.0,
       "safety_circuit_breakers": {
@@ -112,7 +112,7 @@
           "task_type": "scope",
           "prompt": "prompts/phases/scope.md",
           "cores": ["prompts/core/runtime.md", "prompts/core/evidence.md"],
-          "outputs": ["00-scope.md", "tools/outputs/input-classification.jsonl"],
+          "outputs": ["00-scope.md", "tools/outputs/input-classification.jsonl", "tools/outputs/competitors.json"],
           "independent": false,
           "exclusive_inputs": true
         }
@@ -441,7 +441,8 @@
       ],
       "outputs": [
         {"id": "scope_map", "path": "00-scope.md"},
-        {"id": "input_classification", "path": "tools/outputs/input-classification.jsonl"}
+        {"id": "input_classification", "path": "tools/outputs/input-classification.jsonl"},
+        {"id": "competitors", "path": "tools/outputs/competitors.json"}
       ],
       "reconciliations": [
         {"id": "input_classification", "report": "tools/outputs/reconciliation/input-classification.json"}

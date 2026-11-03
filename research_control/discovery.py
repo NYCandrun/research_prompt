@@ -21,6 +21,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, build_opener
 
 from research_control.capture import PublicRedirectHandler, USER_AGENT, _robots_allowed
+from research_control.competitors import COMPETITOR_CHANNEL, COMPETITOR_PREFIX, competitor_channels, competitor_for_channel
 from research_control.io import atomic_write_json, atomic_write_jsonl, atomic_write_text, utc_now, workflow
 from research_control.playbook import MIN_TRIED, distinct_tried, require_tried
 from research_control.runtime import DISCOVERY_COMPLETE, DISCOVERY_TERMINAL, RuntimeStore
@@ -37,8 +38,21 @@ DISCOVERY_CHANNELS = (
     "podcasts",
     "social",
     "code_packages",
+    "investors",
+    "people",
+    "archives",
     "independent_web",
 )
+
+
+def is_channel(name: str) -> bool:
+    """Standard channel or a per-competitor channel such as competitor:acme."""
+    return name in DISCOVERY_CHANNELS or bool(COMPETITOR_CHANNEL.match(name or ""))
+
+
+def channel_slug(name: str) -> str:
+    """File-safe channel name, used for receipts and task IDs."""
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").casefold()).strip("-")
 
 TRACKING_PARAMETERS = {
     "fbclid", "gclid", "mc_cid", "mc_eid", "ref", "referrer", "source",
@@ -157,6 +171,12 @@ def classify_channel(url: str, company_host: str, anchor_text: str = "") -> str:
         return "code_packages"
     if any(name in host for name in ("spotify.com", "podcasts.apple.com", "podbean.com", "transistor.fm", "buzzsprout.com")) or "podcast" in signal:
         return "podcasts"
+    if "web.archive.org" in host or (host == "archive.org" and "/web/" in parsed.path):
+        return "archives"
+    if "sec.gov" in host or host.startswith(("investors.", "ir.")) or re.search(r"/(investors?|ir|investor-relations)(/|$)", parsed.path.casefold()):
+        return "investors"
+    if re.search(r"/(team|leadership|our-team|our-people|people|management|board-of-directors)(/|$)", parsed.path.casefold()):
+        return "people"
     if any(term in signal for term in ("/careers", "/jobs", "greenhouse.io", "lever.co", "ashbyhq.com", "workable.com")):
         return "careers"
     if any(term in signal for term in ("/docs", "/documentation", "/help", "/support", "readme.io", "gitbook.io")):
@@ -259,7 +279,7 @@ class DiscoveryEngine:
         self.company_host = host_key(self.company_url)
 
     def initialize(self) -> dict[str, Any]:
-        for channel in DISCOVERY_CHANNELS:
+        for channel in [*DISCOVERY_CHANNELS, *competitor_channels(self.root)]:
             self.store.ensure_discovery_channel(channel)
         source, _created = self.store.add_source(
             canonical_url=self.company_url,
@@ -290,8 +310,16 @@ class DiscoveryEngine:
         depth: int = 0,
         record_pass: bool = True,
     ) -> dict[str, Any]:
-        if channel not in DISCOVERY_CHANNELS:
+        if not is_channel(channel):
             raise ValueError(f"unknown discovery channel: {channel}")
+        subject: dict[str, Any] | None = None
+        if channel.startswith(COMPETITOR_PREFIX):
+            competitor = competitor_for_channel(self.root, channel) or {}
+            subject = {
+                "subject": competitor.get("slug", channel[len(COMPETITOR_PREFIX):]),
+                "subject_name": competitor.get("name", channel[len(COMPETITOR_PREFIX):]),
+                "subject_url": competitor.get("url", ""),
+            }
         created: list[str] = []
         rejected: list[dict[str, str]] = []
         for value in urls:
@@ -310,10 +338,11 @@ class DiscoveryEngine:
                     relevance="candidate",
                     discovered_from=discovered_from,
                     depth=depth,
+                    metadata=subject,
                 )
                 self.shared_cache.note_url(
                     canonical,
-                    consumer=f"capture.discover.{channel.replace('_', '-')}",
+                    consumer=f"capture.discover.{channel_slug(channel)}",
                     purpose="research_discovery",
                     discovered_from=discovered_from,
                 )
@@ -447,7 +476,7 @@ class DiscoveryEngine:
                         )
                         self.shared_cache.note_url(
                             candidate,
-                            consumer=f"capture.discover.{channel.replace('_', '-')}",
+                            consumer=f"capture.discover.{channel_slug(channel)}",
                             purpose="research_discovery",
                             discovered_from=source["source_id"],
                         )
@@ -476,7 +505,7 @@ class DiscoveryEngine:
                         )
                         self.shared_cache.note_url(
                             candidate,
-                            consumer=f"capture.discover.{channel.replace('_', '-')}",
+                            consumer=f"capture.discover.{channel_slug(channel)}",
                             purpose="research_discovery",
                             discovered_from=source["source_id"],
                         )

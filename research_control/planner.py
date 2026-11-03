@@ -8,7 +8,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from research_control.discovery import DISCOVERY_CHANNELS, DiscoveryEngine
+from research_control.competitors import COMPETITOR_PREFIX, load_competitors
+from research_control.discovery import DISCOVERY_CHANNELS, DiscoveryEngine, channel_slug, host_key
 from research_control.brand_contract import BRAND_TASK_OUTPUTS
 from research_control.io import atomic_write_text, load_json, workflow
 from research_control.orchestration import TASK_SCHEMAS, current_phase, load_state
@@ -136,28 +137,43 @@ class AdaptivePlanner:
         engine = DiscoveryEngine(self.root, self.store)
         engine.initialize()
         discovery_ids: list[str] = []
-        for channel in DISCOVERY_CHANNELS:
-            task_id = f"capture.discover.{_slug(channel)}"
+        competitors = {f"{COMPETITOR_PREFIX}{item['slug']}": item for item in load_competitors(self.root) if not item["watch_list"]}
+        for channel in [*DISCOVERY_CHANNELS, *competitors]:
+            task_id = f"capture.discover.{channel_slug(channel)}"
             discovery_ids.append(task_id)
-            output = f"tools/outputs/worker-parts/discovery/{_slug(channel)}.json"
+            output = f"tools/outputs/worker-parts/discovery/{channel_slug(channel)}.json"
+            competitor = competitors.get(channel)
+            inputs = [
+                {"id": "company_url", "value": load_state(self.root)["company_url"]},
+                {"id": "channel", "value": channel},
+            ]
+            if competitor:
+                inputs.append({
+                    "id": "competitor", "value": competitor["name"], "slug": competitor["slug"],
+                    "url": competitor.get("url", ""), "competing_product": competitor.get("competing_product", ""),
+                    "reason": competitor.get("reason", ""),
+                })
             self._add(
                 WorkItem(
                     task_id=task_id,
                     phase="capture",
                     task_type="source_discovery",
-                    inputs=[
-                        {"id": "company_url", "value": load_state(self.root)["company_url"]},
-                        {"id": "channel", "value": channel},
-                    ],
+                    inputs=inputs,
                     outputs=[output],
-                    prompt_files=["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/phases/discovery.md"],
+                    prompt_files=[
+                        "prompts/core/runtime.md", "prompts/core/evidence.md",
+                        "prompts/phases/discovery-competitor.md" if competitor else "prompts/phases/discovery.md",
+                    ],
                     schema_files=["research_control/schemas/discovery-pass.schema.json"],
-                    host_key="" if channel != "company_site" else load_state(self.root)["company_host"],
-                    priority=10 if channel in {"company_site", "sitemaps"} else 20,
+                    host_key=(
+                        load_state(self.root)["company_host"] if channel == "company_site"
+                        else host_key(competitor["url"]) if competitor and competitor.get("url") else ""
+                    ),
+                    priority=10 if channel in {"company_site", "sitemaps"} else 25 if competitor else 20,
                     independent=True,
                     exclusive_inputs=False,
                     max_attempts=8,
-                    metadata={"channel": channel, "receipt": output},
+                    metadata={"channel": channel, "receipt": output, **({"competitor": competitor} if competitor else {})},
                 ),
                 created,
             )
@@ -225,6 +241,7 @@ class AdaptivePlanner:
                             "url": source["canonical_url"],
                             "channel": source["channel"],
                             "source_kind": source["source_kind"],
+                            "subject": str((source.get("metadata") or {}).get("subject_name") or ""),
                         }],
                         outputs=[directory, receipt],
                         prompt_files=["prompts/core/runtime.md", "prompts/core/evidence.md", "prompts/phases/capture-source.md"],
@@ -405,6 +422,9 @@ class AdaptivePlanner:
                 })
                 char_start = char_end
                 part += 1
+        for item in slices:
+            metadata = (sources.get(item["source_id"]) or {}).get("metadata") or {}
+            item["subject"] = str(metadata.get("subject_name") or "")
         return slices
 
     def _pack_slices(self, slices: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:

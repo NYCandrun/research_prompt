@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from research_control import FAIL, PASS, UNKNOWN
+from research_control.competitors import COMPETITORS_FILE, validate_competitors
 from research_control.diagram_contract import DIAGRAM_CAPTIONS, DIAGRAM_MODEL_JSON, DIAGRAM_SPECS, FINAL_ARTIFACTS
 from research_control.gates.phase_gate import check_phase_gate
 from research_control.hashing import checker_version, hash_patterns, hash_path, report_inputs_current
@@ -186,7 +187,10 @@ def _validate_scope(root: Path) -> dict[str, Any]:
         for heading in ("source", "compet", "input"):
             if heading not in text.casefold():
                 failures.append(f"scope does not address {heading} coverage")
-    return _report(root, "scope_contract", ["00-scope.md", "tools/outputs/run-state.json"], 1, 0 if unknowns else 1, failures, unknowns)
+        competitor_failures, competitor_unknowns = validate_competitors(root, text)
+        failures.extend(competitor_failures)
+        unknowns.extend(competitor_unknowns)
+    return _report(root, "scope_contract", ["00-scope.md", COMPETITORS_FILE, "tools/outputs/run-state.json"], 1, 0 if unknowns else 1, failures, unknowns)
 
 
 def _ledger(root: Path, task_types: set[str] | None = None) -> dict[str, Any]:

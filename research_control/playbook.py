@@ -37,6 +37,7 @@ GENERAL = ("mandate", "off-limits", "workaround-log")
 EVERY_CHANNEL = "general"
 HEADING = re.compile(r"^## (?P<title>.+?)(?:\s*\((?P<keys>[a-z0-9_,\s-]+)\))?\s*$")
 CHANNEL_EXTRAS = {
+    "competitors": ["archives"],
     "company_site": ["archives"],
     "sitemaps": ["archives"],
     "newsroom_blog": ["archives"],
@@ -118,6 +119,8 @@ def section_keys(task: dict[str, Any]) -> list[str]:
     if task_type in {"source_discovery", "capture", "brand_guide"}:
         keys += [*GENERAL, EVERY_CHANNEL]
         channel = _task_channel(task) or ("company_site" if task_type == "brand_guide" else None)
+        if channel and channel.startswith("competitor:"):
+            channel = "competitors"
         if channel:
             keys.append(channel)
             keys += CHANNEL_EXTRAS.get(channel, [])

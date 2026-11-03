@@ -127,6 +127,12 @@ class PublicRedirectHandler(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+def wayback_snapshot(url: str) -> tuple[str, str] | None:
+    """(timestamp, original URL) for a Wayback Machine snapshot URL, else None."""
+    match = re.search(r"^https?://web\.archive\.org/web/(\d{14})(?:[a-z]{2}_)?/(https?://.+)$", url.strip())
+    return (match.group(1), match.group(2)) if match else None
+
+
 def _iso_date(value: str) -> str:
     value = value.strip()
     if not value:
@@ -342,11 +348,24 @@ def capture_source_part(
         token_estimate = max(1, len(body) // 4)
         notes = f"Binary {content_type}; worker must create a canonical text derivative before extraction."
 
+    publisher_default = parsed.netloc.removeprefix("www.")
+    snapshot = wayback_snapshot(url)
+    if snapshot:
+        timestamp, original = snapshot
+        date_published = date_published or f"{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:8]}"
+        method = f"Wayback snapshot {timestamp}; {method}"
+        notes = f"Wayback snapshot of {original} archived at {timestamp}. {notes}".strip()
+        publisher_default = urlparse(original).netloc.removeprefix("www.")
+    if store is not None:
+        record = store.source(source_id) or {}
+        subject_name = str((record.get("metadata") or {}).get("subject_name") or "")
+        if subject_name:
+            notes = f"Subject: {subject_name}. {notes}".strip()
     source = {
         "id": source_id,
         "grade": grade,
         "title": title,
-        "publisher": publisher or parsed.netloc.removeprefix("www."),
+        "publisher": publisher or publisher_default,
         "url": final_url,
         "date published": date_published,
         "date last modified": modified,
