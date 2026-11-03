@@ -36,3 +36,39 @@ without a passing release manifest. When repository instructions and a packet
 conflict, block that packet and report the conflict; unrelated ready work may
 continue. Framework changes during a run go into the template first and reach
 the run through `sync-engine`, which records them in the run history.
+
+## Running the orchestrator
+
+Measured on the Tribe AI run (3,051 orchestrator turns): four fifths of the
+orchestrator's cost was context re-read on every turn and thinking on
+mechanical turns, not the model. The judgment moments are what the
+orchestrator is for: a worker's result is thin or wrong, a check fails for a
+reason the report does not spell out, an evidence call has to be made (for
+example whether internal files on an employee's personal account count, and
+how to label them). Keep the model for those and cut everything else.
+
+- Model and effort: run the orchestrator on the `strong` tier (Claude Opus
+  5.5) at `medium` effort. Dispatch turns gain nothing from high effort, and
+  the judgment moments depend on the model class, not the effort setting.
+  When a run needs few interventions and all of them are mechanical (a
+  relaunch after a reported failure, a recapture after a method improved), try
+  the `standard` tier on the next run and compare.
+- Context: compact at the start of every phase. Keep diagnostic output out of
+  the conversation: read `run`'s short summary, open `run --full` only when the
+  summary is not enough, and never paste a brief, a capture, or a fact store.
+  When a problem needs reading large output to diagnose, hand it to one
+  subagent on the `strong` tier with the failure report and act on its short
+  answer. A worker's report is the thing to read; open its output only to
+  decide a relaunch.
+- Turns: launch every entry in `start_workers` in one turn, wait for the
+  completion notifications instead of polling, then rerun `run` once. About
+  three orchestrator turns per wave of workers is the target; the Tribe run
+  took twelve.
+- Going again: when a result is thin or wrong, say in one line what was wrong
+  and what the next attempt does differently, then relaunch with that line
+  added to the worker's prompt after `Read <read> in full and follow it.`
+  Reopen a channel, add a question, or record an edit through the commands;
+  never fix a worker's output by hand.
+- Framework changes: fix the template between runs. Mid-run, change it only
+  when the run cannot proceed, then `sync-engine`; a run is not the place to
+  develop the runtime.
