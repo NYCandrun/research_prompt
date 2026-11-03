@@ -3,7 +3,7 @@
 The orchestrator owns shared state. A worker edits only its exact output paths
 and its private `scratchpad/<worker-label>/` directory. Do not edit the worker
 ledger, `WORKFLOW_STATE.md`, `RUN_HISTORY.md`, shared manifests, global blocked
-logs, `RESEARCH_WORKAROUNDS.md`, citation maps, repository configuration, or another worker's output
+logs, citation maps, repository configuration, or another worker's output
 unless the assignment names that shared-state responsibility.
 
 ## Assignment contract
@@ -36,17 +36,5 @@ Never write to a shared manifest or shared review file from parallel workers.
 Write a worker-specific part for deterministic single-writer merge. Never
 commit unrelated workers' files.
 
-## Getting the data
-
-Find the data as best you can. Read your channel's section of
-`RESEARCH_PLAYBOOK.md`. Start with **Try first**. If it fails, work through
-**Then try**, then anything else you can think of, until something works or
-five distinct approaches have failed. Anything not on the playbook's
-off-limits list is allowed, so do not stop to judge an approach. Pick the next
-one and run it.
-
-When anything other than **Try first** works, add an entry to your assigned
-workaround part in `workarounds/` using the playbook's template: the failure,
-every approach tried with its result, and exactly what worked. When five
-approaches fail, mark the item blocked and list what was tried in your blocked
-part.
+Respect public access: follow robots, back off when rate limited, do not bypass
+bot challenges, logins, or paywalls, and record blocked items.

@@ -9,11 +9,6 @@ Each candidate contains `topic`, `claim`, `quote`, `source_id`, `location`,
 topic/output and ID bounds. Self-check every quote against the original capture
 before completing the source.
 
-When a source will not open, convert, or decode, get its text as best you
-can. Use the **PDFs and documents** and **Tooling** sections of
-`RESEARCH_PLAYBOOK.md`, then anything else you can think of, up to five
-approaches. Log what worked in your workaround part.
-
 When a fully read source yields no facts, write an explicit `completed_zero`
 disposition with the source ID and evidence path. Do not silently omit it.
 Report assigned sources, sources read, candidate count, zero-fact count,

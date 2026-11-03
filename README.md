@@ -10,8 +10,7 @@ The repository must be reproducible from:
 1. this prompt;
 2. the company URL;
 3. anything I provide in `00-inputs/` or chat;
-4. `RESEARCH_PLAYBOOK.md`;
-5. public sources captured during the run.
+4. public sources captured during the run.
 
 No step may depend on a script, template, file, convention or prior research artifact that is neither supplied by me nor created during this run.
 
@@ -56,7 +55,6 @@ Unless a worker is explicitly assigned a shared-state task, subagents and workfl
 - edit `RUN_HISTORY.md`;
 - merge shared manifests;
 - rebuild the global `BLOCKED.md`;
-- rebuild `RESEARCH_WORKAROUNDS.md`;
 - assign source-ID ranges;
 - assign fact-ID ranges;
 - modify shared placement or citation maps;
@@ -78,7 +76,7 @@ The orchestrator:
 9. controls phase transitions and gates;
 10. performs or delegates final integration.
 
-Every worker writes only to its assigned output files, manifest part, blocked part, workaround part and scratch directory unless its task explicitly says otherwise.
+Every worker writes only to its assigned output files, manifest part, blocked part and scratch directory unless its task explicitly says otherwise.
 
 ### Tool bootstrap
 
@@ -107,12 +105,10 @@ Before capture begins, check for the tools needed by later phases:
 
 If a required command is missing:
 
-1. install it locally or in a project-local environment;
-2. if that fails, work through the **Tooling** section of `RESEARCH_PLAYBOOK.md`: another package manager, a release binary, a library that does the same job, or the closest installed tool;
-3. do not alter unrelated global configuration;
-4. record the substitution in `WORKFLOW_STATE.md`, and log it in the workaround log under section 4.10 if it was not the playbook's first approach.
-
-If `RESEARCH_PLAYBOOK.md` is absent at bootstrap, create it from section 4.10 and the methods in section 10, with a **Try first** and **Then try** list for each channel.
+1. install it locally or in a project-local environment where practical and permitted;
+2. do not silently alter unrelated global configuration;
+3. if installation is not possible, use the closest reliable substitute;
+4. record the substitution and its consequences in `WORKFLOW_STATE.md` and, if it affects evidence coverage, `01-sources/BLOCKED.md`.
 
 Create a repo-local Python virtual environment if Python dependencies are needed and no appropriate environment already exists. Save reproducible dependency information such as `requirements.txt`, `pyproject.toml`, or equivalent.
 
@@ -356,8 +352,9 @@ When inputs do not say otherwise:
 | Competitor videos | Out, except competitor videos the company embeds on its own pages. Competitor talks already captured stay. |
 | Competitor docs | Each competitor's public docs, help center or knowledge base is captured. For suites, capture only the parts about the competing product. Cap around 400 pages per competitor and log what was left out. Videos inside competitor docs are out. |
 | Secondary sources | No dedicated attempt to maximize S-grade volume. Capture relevant S sources encountered during normal research. The brief states how thin S sources are and how much customer proof is company-reported. |
-| Web archives | Start with Wayback CDX. If it fails, work through the **Messaging history** alternatives in `RESEARCH_PLAYBOOK.md`, including the Common Crawl index and dated first-party material. |
-| Access methods | Find the data as best you can under section 4.10. Anything not on the off-limits list is allowed. |
+| Web archives | Try the Wayback Machine once. If the host is blocked or repeatedly fails, cut the channel and reconstruct messaging history from dated primary sources. Do not waste time trying alternate clients through the same blocked network path. |
+| Bot challenges | If a host serves a bot challenge, record it in `BLOCKED.md` and move on. Never bypass it. |
+| Logins and paywalls | Out of scope. |
 | Freshness re-check before the brief | Skipped when research occurs in one or two days. Facts from the last quarter count as current under section 6. |
 | Already captured and verified material | Never drop it merely because scope narrows later. |
 
@@ -530,45 +527,19 @@ On platforms where the visible date is a modified date, record it accordingly.
 
 A shallow Git clone gives a last-modified signal, not publication evidence.
 
-### 4.10 Getting the data
+### 4.10 Stay public
 
-Find the data as best you can.
+No:
+- logins;
+- paywall workarounds;
+- fake accounts;
+- bot-challenge bypasses.
 
-`RESEARCH_PLAYBOOK.md` lists, for each channel, what to **Try first** (it has worked before) and what to **Then try**.
+Follow robots.txt.
 
-1. Start with **Try first**.
-2. If it fails, work through **Then try**.
-3. Then try anything else you can think of.
-4. Stop when something works or five distinct approaches have failed. A distinct approach is a different method, endpoint, tool, URL form or source, not the same request again.
+Back off when rate-limited.
 
-Do not judge whether an approach is acceptable. Use anything except:
-
-- logging in, or creating or using any account;
-- paying, or paywall-removal sites and tricks;
-- solving or defeating a CAPTCHA or bot challenge page;
-- rotating IPs or proxies to get around a block;
-- submitting a form with personal or made-up details;
-- fetching live paths that `robots.txt` disallows. Archived and syndicated copies are fine.
-
-When a host rate-limits, slow down, do other work, and come back with longer spacing.
-
-#### Workaround log
-
-When anything other than **Try first** works, the worker adds an entry to its workaround part, `workarounds/<run-date>-<worker-label>.md`, using the template in `RESEARCH_PLAYBOOK.md`:
-
-- the channel and target;
-- the failure: exact error, status code or symptom;
-- every approach tried, with its result;
-- exactly what worked: command, URL pattern, tool, flags or settings;
-- how many items it fixed;
-- whether it applies to this host, the platform, or everything;
-- a one-line playbook change.
-
-One entry covers every item the same fix solved.
-
-The orchestrator rebuilds `RESEARCH_WORKAROUNDS.md` with `python3 tools/merge_workarounds.py`. I review that log and promote what works into the playbook.
-
-When five approaches fail, the item is blocked. Its blocked record lists every approach tried and its result.
+If access fails, record it rather than routing around the restriction.
 
 ---
 
@@ -688,16 +659,12 @@ Create this structure during bootstrap if absent:
 
 ```text
 README.md
-RESEARCH_PLAYBOOK.md
-RESEARCH_WORKAROUNDS.md
 prompt/
   PROMPT.md
   revised_prompt.md
   CHANGES.md
 
 00-inputs/
-
-workarounds/
 
 00-scope.md
 WORKFLOW_STATE.md
@@ -882,7 +849,6 @@ Facts do not start until:
 - manifest parts are merged;
 - publish dates are backfilled;
 - `BLOCKED.md` is rebuilt;
-- `RESEARCH_WORKAROUNDS.md` is rebuilt;
 - `06-checks/coverage.md` exists.
 
 #### Facts gate
@@ -1080,7 +1046,6 @@ Use per-worker or per-batch files such as:
 
 - `01-sources/manifest-parts/<worker>.csv`
 - `01-sources/blocked-parts/<worker>.md`
-- `workarounds/<run-date>-<worker>.md`
 - `tools/candidates/<batch>.jsonl`
 - `06-checks/<reviewer>.md`
 
@@ -1184,11 +1149,7 @@ Agents write into `01-sources/`.
 Each capture agent or batch receives:
 - its own manifest part;
 - its own blocked part;
-- its own workaround part;
-- its channel's section of `RESEARCH_PLAYBOOK.md`;
 - a pre-assigned source-ID range.
-
-Every channel below follows section 4.10: start with the playbook's **Try first**, then its alternatives, then anything else, and log what worked.
 
 Create scripts needed to merge these parts before the capture gate.
 
@@ -1232,7 +1193,7 @@ to a work list in:
 
 ### 10.2 Messaging history
 
-Start with Wayback CDX.
+Try Wayback CDX once.
 
 Target:
 - homepage;
@@ -1249,9 +1210,11 @@ Capture:
   - H1;
   - H2s.
 
-If Wayback fails, work through the **Messaging history** alternatives in `RESEARCH_PLAYBOOK.md`: the availability API, spaced sequential retries, the Common Crawl index, and URL variants.
+If Wayback is blocked or persistently fails, record it and stop.
 
-Fill remaining gaps in the timeline from dated first-party material.
+Do not spend time routing around the block.
+
+Build the timeline later from dated first-party material.
 
 ### 10.3 Video
 
@@ -1286,7 +1249,7 @@ Keep `yt-dlp` current.
 
 Space requests by roughly 15 to 30 seconds where repeated fetching risks throttling.
 
-Retry rate-limited items at the end in sequential batches with longer spacing. If captions still fail, work through the **YouTube** alternatives in `RESEARCH_PLAYBOOK.md`.
+Retry rate-limited items once at the end in sequential batches with longer spacing.
 
 #### Other hosts
 
@@ -1294,7 +1257,7 @@ For embedded media:
 - inspect the embedding page;
 - prefer published captions or transcript endpoints;
 - pass the embedding page as referer where the host requires it;
-- read the player configuration JSON for text tracks and media URLs.
+- do not bypass bot challenges.
 
 If the host structure exposes a public caption file, capture it.
 
@@ -1462,8 +1425,7 @@ Create and run deterministic tools to:
 4. validate local-file cells;
 5. backfill publication dates;
 6. merge competitor manifests;
-7. rebuild `BLOCKED.md`;
-8. rebuild `RESEARCH_WORKAROUNDS.md` with `tools/merge_workarounds.py`.
+7. rebuild `BLOCKED.md`.
 
 Create:
 
@@ -3259,13 +3221,12 @@ Include:
 2. source counts by channel;
 3. fact counts by verdict;
 4. the top five open questions;
-5. blocked sources or channels I may want to open manually, with what was tried;
-6. workarounds found this run and the playbook changes they point to;
-7. the three findings you are least sure of;
-8. why each of those three remains uncertain;
-9. any material substitution caused by unavailable tooling;
-10. final deliverable paths;
-11. final check status.
+5. blocked sources or channels I may want to open manually;
+6. the three findings you are least sure of;
+7. why each of those three remains uncertain;
+8. any material substitution caused by unavailable tooling;
+9. final deliverable paths;
+10. final check status.
 
 Do not substitute this report for the deliverables.
 

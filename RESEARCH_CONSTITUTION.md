@@ -36,9 +36,9 @@ The repository has three durable layers:
 3. Sense-making built only on the fact store, culminating in the company brief
    and one-page summary.
 
-The repository must be reproducible from the effective prompt, the research
-playbook, company URL, user-provided inputs, captured public sources, and
-dependencies created or declared during the run. Incidental local files or conventions are not valid
+The repository must be reproducible from the effective prompt, company URL,
+user-provided inputs, captured public sources, and dependencies created or
+declared during the run. Incidental local files or conventions are not valid
 dependencies.
 
 ## Scope
@@ -89,29 +89,13 @@ Facts supplied directly by the user are preserved verbatim as a Grade-I source
 and as facts with verdict `confirmed (user-provided)`. Do not independently
 check them unless the user asks.
 
-### Finding the data
+### Public-access boundary
 
-Find the data as best you can.
-
-`RESEARCH_PLAYBOOK.md` lists, for each channel, the approach that has worked
-before and the alternatives to try next. Start with the playbook's first
-approach. If it fails, work through its alternatives, then anything else you
-can think of, until something works or five distinct approaches have failed.
-Do not judge whether an approach is acceptable. Anything not on the playbook's
-off-limits list is allowed.
-
-The off-limits list is short and fixed: no logins or accounts, no payment or
-paywall-removal tricks, no solving or defeating CAPTCHAs or bot challenges, no
-IP or proxy rotation around a block, no forms filled with personal or made-up
-details, and no live paths that `robots.txt` disallows. When a host rate limits,
-slow down and come back later.
-
-When anything other than the first approach works, record the failure, every
-approach tried, and exactly what worked in a workaround part under
-`workarounds/`. The orchestrator merges the parts into `RESEARCH_WORKAROUNDS.md`
-with `tools/merge_workarounds.py`. The user reviews that log and promotes what
-works into the playbook. An item is blocked only after five approaches fail,
-and its blocked record lists what was tried.
+Use only public access. Never use logins, fake accounts, paywall workarounds, or
+bot-challenge bypasses. Follow `robots.txt`, back off when rate limited, and log
+failed access instead of routing around it. Try the Wayback Machine once. If
+the network path is blocked or repeatedly fails, stop that channel and use
+dated first-party sources for messaging history.
 
 ## Evidence
 
@@ -422,8 +406,7 @@ acceptance.
 
 The short run report supplements rather than replaces deliverables. It reports
 source counts by grade and channel, fact verdict counts, top open questions,
-blocked sources, workarounds found and the playbook changes they point to,
-least-certain findings and reasons, tooling substitutions,
+blocked sources, least-certain findings and reasons, tooling substitutions,
 deliverable paths, final check status, worker-attempt outcomes, reconciled
 inputs, gate status, exceptions, and release-manifest path.
 
