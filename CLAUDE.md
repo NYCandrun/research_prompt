@@ -9,10 +9,13 @@ Follow `README.md` as the operational entry point: read this file and the
 README's sections Run it, Execute task packets, How many workers, and Talking
 to the user. Do not read `RESEARCH_CONSTITUTION.md` or `WORKFLOW.yaml`: the
 constitution reaches each worker inside its brief, and the scheduler reads the
-workflow. Start a company run with
-`python3 -m research_control new --url URL`, then work from inside its
-`runs/<slug>/` directory: rerun `python3 -m research_control run` and dispatch
-every ready packet until exact-artifact release passes.
+workflow. `instructions.md` is the entry point when the user's message names
+the domains: `python3 -m research_control start --url URL` (one `--url` per
+domain) starts one company's run at once and, for several domains, has a
+worker decide which belong to one company before starting one run per company.
+Then work from inside each `runs/<slug>/` directory: rerun
+`python3 -m research_control run` and dispatch every ready packet until
+exact-artifact release passes.
 
 - `run` prints a short summary; the full result is in
   `tools/outputs/last-run.json` (`run --full` prints it). Start one subagent
@@ -44,10 +47,11 @@ every ready packet until exact-artifact release passes.
   once, with a recommendation, while continuing everything that does not
   depend on the answer.
 - A company with more than one domain of its own (IDEO and IDEO U) is one run:
-  start it with `new --url URL --also URL`, one `--also` per extra domain, or
-  add a domain mid-run with `scope add-host --url URL --reason "..."` and rerun
-  `run`. Every first-party domain is crawled and graded as the company's own
-  words.
+  `start` groups the domains by company, or name them yourself with
+  `new --url URL --also URL`, one `--also` per extra domain, or add a domain
+  mid-run with `scope add-host --url URL --reason "..."` and rerun `run`. Every
+  first-party domain is crawled and graded as the company's own words. Several
+  companies are several separate runs, each driven from its own directory.
 - After the run, read `RESEARCH_WORKAROUNDS.md` in the run directory and fold
   what worked into the template's `RESEARCH_PLAYBOOK.md`.
 - Do not invent source, page, batch, or worker quotas. Discovery channels close

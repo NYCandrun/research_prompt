@@ -12,7 +12,11 @@ packet only, and no inherited status conversation. The SQLite scheduler, not
 the parent chat, determines the task graph, retries, dependencies, and
 concurrency.
 
-A company with more than one domain of its own (IDEO and IDEO U) is one run:
+`instructions.md` is the entry point when the user's message names the
+domains: `python3 -m research_control start --url URL`, one `--url` per domain,
+starts one company's run at once and, for several domains, has a worker decide
+which belong to one company before starting one run per company. A company
+with more than one domain of its own (IDEO and IDEO U) is one run:
 `new --url URL --also URL`, one `--also` per extra domain, or mid-run
 `scope add-host --url URL --reason "..."` then `run`; every first-party domain
 is crawled as the company's own words.

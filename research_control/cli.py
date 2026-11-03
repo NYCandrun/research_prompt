@@ -224,6 +224,12 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("preflight", help="verify the copied template and local runtime")
+    start = subparsers.add_parser(
+        "start", help="start from one or more domains: one company starts its run; several are grouped by company first"
+    )
+    start.add_argument("--url", action="append", default=[], metavar="URL", help="a domain or URL (repeatable)")
+    start.add_argument("--validate", metavar="ID", help="check a grouping worker's decision.json")
+    start.add_argument("--apply", metavar="ID", help="start one run per company in a checked decision")
     new = subparsers.add_parser("new", help="provision an isolated run directory and initialize it")
     new.add_argument("--url", required=True)
     new.add_argument(
@@ -534,6 +540,19 @@ def main() -> None:
     try:
         if args.command == "preflight":
             raise SystemExit(preflight(root))
+        if args.command == "start":
+            from research_control.grouping import apply_decision, start_runs, validate_decision
+
+            if args.validate:
+                _print_json(validate_decision(root, args.validate))
+                return
+            if args.apply:
+                _print_json(apply_decision(root, args.apply))
+                return
+            if not args.url:
+                parser.error("pass at least one --url")
+            _print_json(start_runs(root, args.url))
+            return
         if args.command == "new":
             run_root = Path(args.dir).resolve() if args.dir else root / RUNS_DIRECTORY / run_slug(args.url)
             provision_run(root, run_root)

@@ -1,12 +1,181 @@
 # Adaptive company research agent
 
-Give the agent one public company URL. This repository discovers the available
-evidence, plans work from the resulting corpus, and carries the run through a
-cited, visually reviewed company brief, public-evidence brand guide, and four
-evidence-bounded architecture diagrams. Do not ask the user how many pages,
-sources, batches, or workers to use. Ask the user only when something is
-genuinely ambiguous for this company, once, with a recommendation, while
-continuing everything that does not depend on the answer.
+Give it a company's web address. It finds the company's public evidence, reads
+it, and writes a cited company brief, a brand guide, and four architecture
+diagrams, with every fact traced back to the page, document, or recording it
+came from. It runs as a team of AI workers under a scheduler written in plain
+Python, inside Claude Code.
+
+This file has two parts. The first explains what the system is, what it
+produces, and how it is built, for anyone reading the repository. The second,
+from "Run it" on, is the operating manual the control agent follows.
+
+## What it is
+
+Company research by hand means days of reading: the company's own site, its
+help center and careers pages, press, podcasts and talks, code it has
+published, investor filings, what competitors and customers say, and what old
+versions of its pages said. A language model can read all of that, but a model
+left alone with a browser loses track of what it has read, repeats itself,
+quotes things that are not on the page, and stops when it is tired rather than
+when the evidence runs out.
+
+This system keeps the model for judgment and gives everything else to code.
+Code crawls the site, pulls sitemaps, captures pages and PDFs, transcribes
+audio and video, splits long documents, files facts, builds digests, and runs
+the checks between steps. Models decide what the research questions are, what
+each source says, whether a quote supports a claim, how the findings fit
+together, and whether the draft is wrong. A scheduler holds the whole plan in a
+database, hands out one task at a time under a lease, and refuses to call a
+task done until its outputs exist and pass their checks.
+
+The result is repeatable: two runs on the same company find the same evidence
+and leave the same trail, and a run that dies halfway continues on another
+machine from its last save.
+
+## What it produces
+
+- **A company brief.** A top-down report: executive summary, the company and
+  its history, market and competitors, what it sells and how it is built, how
+  it sells, customers and engagements, people, direction, open questions, and
+  the limits of the evidence. Every statement cites a fact, and every fact
+  carries its quote, its source, its date, and a deep link.
+- **A brand guide.** Colors, type, logo use, and voice, taken from the
+  company's own public pages and assets, with screenshots as evidence.
+- **Four architecture diagrams.** Product capability map, operating model,
+  enterprise logical architecture, and technical dependency map, each built
+  only from facts that passed verification and drawn in the company's style.
+- **The evidence.** Every captured page, document, transcript, and extracted
+  fact, kept on a branch of the repository so the report can be checked line
+  by line later.
+
+## How a run works
+
+1. **Scope.** A worker reads the company's homepage and anything the user
+   supplied, and writes the numbered research questions the run will answer.
+2. **Find.** Fourteen source channels are worked in parallel: the company's
+   site and sitemaps (crawled by code), then newsroom and blog, help and
+   documentation, careers, video, podcasts, social, published code, the
+   independent web, investors, people, public archives, and competitors (one
+   worker each). A channel closes when it has enough for the questions or when
+   searching stops turning up anything new. Nobody sets a page count.
+3. **Capture.** Code fetches every admitted source, transcribes recordings, and
+   keeps the original. What cannot be fetched is recorded with what was tried,
+   and a later pass looks for a public copy of the same content.
+4. **Extract.** Workers read the captured text in bounded batches and write
+   facts: a claim, the exact quote, who said it, when, and how reliable the
+   source is. Code files them under stable IDs and rejects any quote that is
+   not in its source.
+5. **Write, then verify.** Workers draft the findings from one-line digests of
+   the facts, opening full rows only as needed. Then every cited fact is
+   checked against its capture by a separate worker that did not write the
+   draft, and the draft is corrected.
+6. **Review.** Independent reviewers read the corrected draft: a skeptic
+   arguing against it, a technical reader, an insider's read, an editor, a
+   language check, and a citation check. Fixes go back through the same
+   checks.
+7. **Release.** The report, brand guide, and diagrams are built and reviewed,
+   and the run is released only when the final files match the exact hashes
+   the checks passed on.
+
+## How it is built
+
+**Plain Python, no dependencies.** The engine is a Python package
+(`research_control`) with no third-party requirements beyond Python 3.11, so
+it runs anywhere Python does. Its tests cover the scheduler, discovery,
+capture, extraction, verification, publication, archiving, and resume.
+
+| What | Count |
+|---|---:|
+| Python in the engine | 15,633 lines |
+| Automated tests | 157 |
+| Task instructions (prompt files) | 37 |
+| Source channels | 14 |
+| Phases with checks between them | 11 |
+
+**A scheduler, not a chat loop.** The plan lives in a SQLite database. Every
+task has exact inputs, outputs, dependencies, and checks. A worker claims a
+task under a lease, heartbeats while it works, and either succeeds (outputs
+exist and pass) or fails with a reason and is retried. When an input changes,
+every task that read it is marked stale and redone, and nothing downstream is
+trusted until it is. Tasks that read different material run in parallel.
+
+**Code writes the brief; the worker reads it once.** For each task, the
+engine writes one file holding everything the worker needs: the instructions
+for that task alone, the text of the files it reads, the run's notes, and how
+to finish. The control agent starts a worker with one line pointing at that
+file. Nothing is pasted between conversations, so the control agent's own
+context stays small, and no worker reads a file twice.
+
+**The right model for each task.** Every task names a tier. Cheap, fast models
+do discovery and triage; the strongest model does fact verification, the
+skeptical review, and diagram modeling; everything else runs on the flagship.
+The run records which model and effort did each task.
+
+**Checks fail closed.** Between phases, code checks the outputs: facts have
+quotes that exist in their sources, citations resolve, the report covers every
+question, the language is American English, the diagrams reference only
+verified facts. A failing check stops the run with the list of what failed; the
+control agent fixes the cause through commands, never by editing outputs by
+hand.
+
+**Nothing is lost.** The run saves itself to a branch of the repository before
+every check and at the start of every phase: captures, transcripts, facts,
+drafts, the scheduler's state, and the control agent's own conversation (with
+secrets removed). `resume` restores a run on a fresh machine and releases the
+old machine's leases.
+
+**It learns from blocked sources.** A playbook tells workers what to try first
+for each kind of source and what to try when that fails, inside three limits:
+no logins or accounts, no payment or paywall tricks, and no paths a site's
+robots.txt disallows. Workers log what worked in a workaround file, which is
+folded back into the playbook after each run. A failure registry lists every
+failure mode the system guards against and where each guard lives.
+
+**Measured, then cut.** On a full run (Tribe AI), the control agent took
+3,051 turns, and four fifths of its cost was re-reading its own context on
+mechanical turns. The brief design, the one-line worker launch, and the
+per-phase context reset in `CLAUDE.md` came out of that measurement.
+
+## Repository map
+
+| Path | What it is |
+|---|---|
+| `instructions.md` | The entry point: how a session starts a run from one or more domains |
+| `CLAUDE.md`, `AGENTS.md` | Operating rules for the control agent on each host |
+| `research_control/` | The engine: scheduler, discovery, capture, extraction, verification, publication, archive, resume |
+| `research_control/tests/` | The test suite |
+| `prompts/` | The task instructions workers receive inside their briefs |
+| `RESEARCH_CONSTITUTION.md` | The evidence rules every worker is held to |
+| `RESEARCH_PLAYBOOK.md` | What to try first for each source channel, and what to try next |
+| `WORKFLOW.yaml` | The phases, their tasks, and the checks between them |
+| `FAILURE_REGISTRY.md` | The numbered failure modes the system guards against |
+| `docs/legacy-prompt.md` | The original single research prompt this system grew from |
+| `runs/` | One directory per company run (ignored by git; each saves to its own branch) |
+
+## Quick start
+
+Clone this repository into a new repository of your own, open it in Claude
+Code on Claude Opus 5.5 at high effort, and send one message:
+
+```text
+Read instructions.md and run it on ideo.com and ideou.com.
+```
+
+With one domain, the run starts at once. With several, a worker first decides
+whether they belong to one company (IDEO and IDEO U do) or to several, and the
+session starts one run per company. Each run drives itself to a released
+report and saves its evidence to a `run-data/<company>` branch of your
+repository.
+
+To start by hand instead:
+
+```bash
+python3 -m research_control preflight
+python3 -m research_control start --url ideo.com --url ideou.com
+```
+
+Everything from here on is the operating manual the control agent follows.
 
 ## Run it
 
@@ -14,6 +183,18 @@ From the template checkout, provision an isolated run directory and start it:
 
 ```bash
 python3 -m research_control preflight
+python3 -m research_control start --url "DOMAIN" [--url "DOMAIN" ...]
+```
+
+`start` is the entry point `instructions.md` walks through. With one domain
+it provisions and starts that company's run. With several it reads each
+homepage, writes a brief under `runs/_grouping/<id>/`, and prints one worker
+to start; the worker decides which domains belong to one company and writes
+`decision.json`; `start --validate <id>` checks it and `start --apply <id>`
+starts one run per company, with a company's extra domains as first-party
+domains of its run. `new` starts one run by hand:
+
+```bash
 python3 -m research_control new --url "COMPANY_URL"
 ```
 
