@@ -8,7 +8,8 @@ unless the assignment names that shared-state responsibility.
 
 ## Assignment contract
 
-Before work starts, the assignment must provide:
+Your launch message names an assignment file in `tools/outputs/assignments/`.
+Read it first. It is immutable and provides:
 
 - task type and stable worker/task/attempt IDs;
 - immutable input IDs or an exact work-list slice;

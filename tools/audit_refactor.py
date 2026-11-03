@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CLASSIFICATIONS = {"principle", "scope", "contract", "procedure", "schema", "deterministic_check", "semantic_review", "reconciliation", "gate", "test", "runtime_state", "reporting", "presentation"}
 ENFORCEMENT = {"prompt", "schema", "script", "workflow", "model_review", "human_or_model_visual_review", "git", "ci", "mixed"}
 REQUIRED_PROMPTS = {
-    "prompts/core/evidence.md", "prompts/core/writing.md", "prompts/core/runtime.md",
+    "prompts/core/evidence.md", "prompts/core/writing.md", "prompts/core/runtime.md", "prompts/orchestrator.md",
     *{f"prompts/phases/{name}.md" for name in (
         "capture", "extraction", "synthesis", "verification", "review-technical",
         "review-devils-advocate", "review-insider", "review-editor", "fixer",

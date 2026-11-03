@@ -14,6 +14,8 @@
   "global": {
     "fail_closed": true,
     "ledger": "tools/outputs/worker-ledger.jsonl",
+    "assignment_directory": "tools/outputs/assignments",
+    "entry_prompt": "prompts/orchestrator.md",
     "gate_directory": "tools/outputs/gates",
     "reconciliation_directory": "tools/outputs/reconciliation",
     "validation_directory": "tools/outputs/validations",
@@ -417,7 +419,7 @@
         {"id": "citation_claim_a", "path": "06-checks/citation-claims-a.md", "role": "citation_claim_reviewer", "independent": true},
         {"id": "citation_claim_b", "path": "06-checks/citation-claims-b.md", "role": "citation_claim_reviewer", "independent": true},
         {"id": "visual_review", "path": "06-checks/visual-review*.md", "role": "visual_reviewer", "independent": true},
-        {"id": "orchestrator_page_review", "path": "06-checks/final-report.md", "role": "orchestrator", "independent": false}
+        {"id": "orchestrator_text_review", "path": "06-checks/final-report.md", "role": "orchestrator", "independent": false}
       ],
       "tests": ["citation_integrity", "execution_integrity", "release_integrity"],
       "completion": {"require_all": true, "state_update_after_gate": true},
@@ -429,7 +431,7 @@
         "required_paths": ["07-final-report/company-brief.pdf", "07-final-report/company-brief.html", "07-final-report/one-page.pdf", "07-final-report/one-page.html", "06-checks/final-report.md"],
         "required_reconciliations": ["final_cited_facts", "citation_sources", "visual_pages"],
         "required_validators": ["final_artifact_contract", "reader_facing_text", "american_english", "new_cited_fact_verification", "citation_structure", "exhibit_mapping", "design_check", "visual_audit", "visual_records", "artifact_binding"],
-        "required_semantic_reviews": ["american_english_review", "citation_claim_a", "citation_claim_b", "visual_review", "orchestrator_page_review"],
+        "required_semantic_reviews": ["american_english_review", "citation_claim_a", "citation_claim_b", "visual_review", "orchestrator_text_review"],
         "required_tests": ["citation_integrity", "execution_integrity", "release_integrity"],
         "required_worker_task_types": ["brief_writer", "assembler", "citation_claim_review", "visual_review"]
       }

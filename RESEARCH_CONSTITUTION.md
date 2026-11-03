@@ -285,8 +285,8 @@ without imitating an unrelated proprietary report.
 Automated layout checks find measurable overflow, tight boxes, overlaps, split
 exhibits, and unexplained gaps. They do not replace visual judgment. A separate
 high-reasoning reviewer opens every rendered page in order with no sampling and
-records one row for every clean or defective page. The orchestrator also views
-every page for visual quality, presumptive employment language, exposed
+records one row for every clean or defective page. The orchestrator reviews the
+final text, not page images, for presumptive employment language, exposed
 internals, stale counts, and stale metadata.
 
 Fix systemic layout causes before isolated symptoms. After material pagination
@@ -372,7 +372,10 @@ not the authority that declares completion. Deterministic gates and independent
 release acceptance do so from current on-disk evidence.
 
 Every assignment is bounded and immutable, with stable IDs, exact outputs,
-validators, and non-overlapping ownership. Every attempt remains in an
+validators, and non-overlapping ownership. It is written to an assignment
+file before launch, and the worker reads that file rather than a restatement.
+The orchestrator runs from a short entry prompt and reads the master prompt
+one phase section at a time. Every attempt remains in an
 append-only single-writer ledger. Success requires process completion, valid
 outputs, and hashes. Prose reassurance is never enough.
 

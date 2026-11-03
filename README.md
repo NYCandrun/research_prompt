@@ -31,9 +31,9 @@ Before Phase 0:
 5. If it is already a Git repository, use it as-is. Never run a destructive reset.
 6. Create the repository structure in section 7 where it does not already exist.
 7. Create `WORKFLOW_STATE.md` immediately.
-8. Create `prompt/PROMPT.md` containing the exact prompt supplied for this run.
-9. Create `prompt/revised_prompt.md` containing the effective prompt being followed.
-10. Make `README.md` an identical copy of `prompt/revised_prompt.md`.
+8. Create `prompt/PROMPT.md` containing the exact prompt supplied for this run. If the prompt is already a file, such as this `README.md`, copy it with `cp`. Write it out only if it was supplied only in chat, and then only once.
+9. Create `prompt/revised_prompt.md` containing the effective prompt being followed. Copy it with `cp`.
+10. Make `README.md` an identical copy of `prompt/revised_prompt.md`, with `cp`. Never retype or regenerate prompt text with a model.
 11. Create `prompt/CHANGES.md`. If this prompt changes during the run, record each change there with the date, what changed and why.
 12. Record in `WORKFLOW_STATE.md`:
     - company URL;
@@ -44,6 +44,33 @@ Before Phase 0:
     - files and tools created during bootstrap;
     - open issues;
     - active workflow or agent IDs where available.
+
+### Reading this prompt
+
+The orchestrator runs from `prompts/orchestrator.md`, a short entry prompt. It does not hold this whole prompt in context. When a phase starts, read that phase's section in full with:
+
+`python3 tools/prompt_section.py <section number>`
+
+Read at bootstrap: sections -1, 1, 2, 3, 7, 8 and 19.
+
+Read when the phase starts:
+
+- Phase 0: section 9;
+- Phase 1: section 10;
+- Phase 2: section 11;
+- Phase 4: sections 12 and 13;
+- Phase 5: section 14;
+- Phase 6: section 15;
+- final checks: section 16;
+- closing: sections 17 and 18.
+
+Sections 0, 4, 5 and 6 are worker rules carried by `prompts/core/`. Read one only to settle a question a worker escalates.
+
+After context compaction, re-read the current phase's section before continuing.
+
+`WORKFLOW.yaml` is read by the gate scripts, not by the orchestrator. `RESEARCH_CONSTITUTION.md` and `FAILURE_REGISTRY.md` are references. Open one only when a policy question comes up.
+
+If `prompts/orchestrator.md` or `tools/prompt_section.py` is absent, create it during bootstrap from this subsection.
 
 ### Shared-state ownership
 
@@ -664,6 +691,11 @@ prompt/
   revised_prompt.md
   CHANGES.md
 
+prompts/
+  orchestrator.md
+  core/
+  phases/
+
 00-inputs/
 
 00-scope.md
@@ -743,6 +775,7 @@ tools/
   briefs/
   lists/
   outputs/
+    assignments/
   digests/
   candidates/
   extracts/
@@ -758,6 +791,8 @@ Add `scratchpad/` to `.gitignore`.
 - `prompt/PROMPT.md`: exact prompt supplied at the start.
 - `prompt/revised_prompt.md`: effective prompt after explicit changes made during the run.
 - `README.md`: identical to `prompt/revised_prompt.md`.
+- `prompts/orchestrator.md`: the entry prompt the orchestrator runs from.
+- `prompts/core/` and `prompts/phases/`: the rule files workers read.
 - `prompt/CHANGES.md`: dated record of prompt changes during the run.
 
 ### File naming
@@ -961,6 +996,8 @@ Every agent prompt opens with a task-type line such as:
 
 `TASK TYPE: EXTRACTION WORK, NOT A STATUS QUESTION`
 
+`tools/worker.py launch` prints that line and the rest of the launch message. The message names the worker's assignment file and the prompt files to read. It does not restate rules.
+
 Tell the agent:
 
 - project-progress messages are not its task;
@@ -970,11 +1007,15 @@ Tell the agent:
 
 Agents read:
 
-`tools/briefs/phase-brief-core.md`
+1. their assignment file in `tools/outputs/assignments/`;
+2. `prompts/core/runtime.md`;
+3. `prompts/core/evidence.md` or `prompts/core/writing.md` when the task needs them;
+4. `prompts/phases/<task>.md`;
+5. a short run-specific phase brief in `tools/briefs/` when the phase has one.
 
-plus a short phase-specific brief.
+`prompts/core/` and `prompts/phases/` carry the evidence, tag, currency, speaker, writing and return-format rules. Do not restate those rules in a brief or a launch message. If `prompts/` is absent when the run begins, create it once during bootstrap from sections 4, 5, 6 and 8 and the phase sections, and reuse it for every worker.
 
-Create `tools/briefs/phase-brief-core.md` during bootstrap if absent.
+A phase brief holds only what is specific to this run: company and flagship, products in focus, the ID ranges and file paths in play, cited-fact lists, design decisions, and anything learned earlier in the run that the workers need.
 
 Write each short phase-specific brief when that phase is ready to launch, so it reflects the repository's actual state at that point rather than assumptions made at bootstrap. In particular:
 
@@ -983,14 +1024,6 @@ Write each short phase-specific brief when that phase is ready to launch, so it 
 - write the Phase 6 brief immediately before launching Phase 6 brief writers, assemblers and final-review workers.
 
 Do not prewrite those three briefs at the start of the project unless their contents are purely structural. Refresh any structural draft immediately before launch.
-
-The core brief includes:
-- evidence rules;
-- tag rules;
-- currency rules;
-- speaker rules;
-- writing rules;
-- return format.
 
 Never send the entire master prompt to every worker.
 
@@ -2758,7 +2791,7 @@ Because numbers are assigned at first occurrence:
 - deleting the first use of a source may move that source's number;
 - intervening numbers may shift.
 
-Look at every changed page as an image before returning the PDF.
+Have the visual reviewer, in a separate context, look at every changed page as an image before the PDF is returned. The orchestrator checks the changed pages' text with `tools/brief_html/text_review.py`.
 
 ---
 
@@ -3080,18 +3113,27 @@ Check each diagnosis against the actual HTML.
 
 Do not alter a rule because a reviewer misdiagnosed normal ragged wrapping as a broken unit.
 
-### Orchestrator review
+### Orchestrator text review
 
-The main Claude Code session also views every page.
+The main Claude Code session does not open page images. The visual reviewer does. The orchestrator checks text.
 
-In addition to visual quality, check:
+Create:
 
-- copy that presumes I already work at the company;
-- internal language exposed to the reader;
-- stale counts;
-- stale section 8 numbers;
-- stale exhibit totals;
-- stale cover metadata.
+`tools/brief_html/text_review.py`
+
+It extracts the text of every page of both PDFs in order and flags:
+
+- copy that presumes I already work at the company, including `onboarding`, `starting at`, `the new PMM` and `the role`;
+- internal language exposed to the reader: repository paths, fact IDs, script names, build notes, remove-before-sharing notes;
+- counts in section 8 of the brief that differ from the saved script outputs;
+- exhibit totals that differ from their source tables;
+- cover metadata that differs from `WORKFLOW_STATE.md`, such as the company name and research date.
+
+It writes its flags to:
+
+`06-checks/final-report.md`
+
+The orchestrator then reads, once, the flagged lines plus the extracted text of the cover, the opening summary and section 8, and records each decision in the same file.
 
 ---
 
@@ -3249,6 +3291,8 @@ During the existing tool bootstrap, create and test these reusable scripts befor
 - `tools/check_phase_gate.py`: validates a named phase and returns a nonzero exit code unless all requirements pass.
 - `tools/reconcile_work.py`: reconciles assigned input IDs against documented output dispositions for each work list.
 - `tools/check_release.py`: independently verifies final acceptance and writes a release manifest.
+- `tools/worker.py`: registers each worker attempt before launch and records its terminal status, output hashes and validation result after.
+- `tools/prompt_section.py`: prints a numbered section of this prompt verbatim.
 
 Create these machine-readable files or directories:
 
@@ -3270,6 +3314,8 @@ Before launching a worker, register a record with:
 - start and finish timestamps when available;
 - process or workflow exit status when exposed;
 - output-validation status and SHA-256 hashes of validated outputs.
+
+Register with one call: `python3 tools/worker.py launch ...`. It appends the running attempt to the ledger, writes the immutable assignment file in `tools/outputs/assignments/`, creates the scratch directory and prints the launch message. Close with one call: `python3 tools/worker.py finish ...`. It hashes the expected outputs, records the terminal status and validation result on that attempt's row and validates the ledger. The launch message names the assignment file and prompt files; it does not restate them.
 
 Update the ledger as work proceeds. A worker is `succeeded` only when its execution has ended, every required output exists, its assigned output checks pass, and its output hashes have been recorded. A reassuring agent message is never sufficient. An interrupted or unobservable worker remains unresolved until on-disk outputs and the available runtime status establish its outcome. Preserve failed attempts when retrying; retries receive a new attempt number and do not erase failure history.
 

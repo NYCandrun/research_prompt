@@ -50,18 +50,18 @@ malformed, crashed, stale, or under-counted checks become `UNKNOWN` and block.
 
 ## Preservation
 
-The conservative inventory contains **1,732 normative or contract-bearing
+The conservative inventory contains **1,754 normative or contract-bearing
 records**. The parser deliberately over-preserves list and table entries that
 inherit an imperative from their lead-in. This prevents terse field lists and
 unusual defensive details from disappearing during consolidation.
 
 | measure | count |
 |---|---:|
-| Atomic inventory rows | 1,732 |
-| Rows marked `preserved` | 1,732 |
+| Atomic inventory rows | 1,754 |
+| Rows marked `preserved` | 1,754 |
 | Rows without a destination | 0 |
-| README headings and subheadings | 202 |
-| Heading migration entries | 202 |
+| README headings and subheadings | 203 |
+| Heading migration entries | 203 |
 | Explicitly removed requirements | 0 |
 | Registered failure modes | 68 |
 
@@ -69,13 +69,13 @@ Inventory by assurance layer:
 
 | layer | requirements |
 |---|---:|
-| Data integrity | 17 |
+| Data integrity | 19 |
 | Evidence validity | 488 |
 | Reasoning quality | 219 |
-| Publication integrity | 511 |
-| Execution integrity | 497 |
+| Publication integrity | 513 |
+| Execution integrity | 515 |
 
-Section 19 contributes 89 inventory rows, all classified under execution
+Section 19 contributes 92 inventory rows, all classified under execution
 integrity. Its worker ledger, immutable assignments, attempts, dispositions,
 reconciliation, status semantics, counts, checker identity, hashes, gates,
 staleness, release acceptance, exact artifacts, negative tests, bounded retry,
@@ -83,8 +83,32 @@ and concise-output rules all have explicit destinations.
 
 `MIGRATION_MAP.md` maps every source heading and documents behavioral
 equivalence. `REQUIREMENT_INVENTORY.csv` preserves exact README source text and
-line location for each atomic record. The original README and historical prompt
-files were not edited.
+line location for each atomic record. The original refactor did not edit the
+README. One later change did, described below.
+
+### Token-efficiency change
+
+README sections -1, 7, 8.3, 15.12, 16.7 and 19 changed so that the
+orchestrator and workers carry less standing context and make fewer tool
+calls, with no change to what gets checked:
+
+- The orchestrator runs from `prompts/orchestrator.md` and reads one README
+  section per phase with `tools/prompt_section.py` instead of holding the
+  whole prompt, the constitution, the workflow and the failure registry.
+- Prompt copies are made with `cp`, never retyped.
+- `tools/worker.py launch` and `finish` do all worker bookkeeping in one call
+  each: ledger row, immutable assignment file, scratch directory, launch
+  message, output hashes, validation result and ledger validation. Workers
+  read their assignment file rather than a restated prompt.
+- Phase briefs hold only run-specific content and point at `prompts/` for
+  rules, which removes the duplicated `phase-brief-core.md`.
+- The orchestrator's final review runs on extracted PDF text, written by
+  `tools/brief_html/text_review.py`, instead of a second pass over page images.
+  The separate visual reviewer still opens every page.
+
+The constitution, `WORKFLOW.yaml` (`orchestrator_text_review`), and the
+runtime prompt match. The inventory and migration map were regenerated from
+the edited README.
 
 ## Scar tissue
 
@@ -264,10 +288,10 @@ the current master prompt in production:
 
 ## Verification performed
 
-- 25 unit tests pass.
+- 35 unit tests pass.
 - All five categorized suites pass: data integrity, evidence pipeline,
   citation integrity, execution integrity, and release integrity.
-- The traceability audit passes with 1,732 inventory rows, 202 mapped headings,
+- The traceability audit passes with 1,754 inventory rows, 203 mapped headings,
   and 68 unique failure IDs.
 - `WORKFLOW.yaml` and all eight schemas parse as valid JSON.
 - The Python control package compiles without syntax errors.
