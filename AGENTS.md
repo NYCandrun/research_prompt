@@ -12,6 +12,9 @@ packet only, and no inherited status conversation. The SQLite scheduler, not
 the parent chat, determines the task graph, retries, dependencies, and
 concurrency.
 
+Tools install themselves: `start`, `new`, and `resume` put yt-dlp, ffmpeg,
+faster-whisper and its models, poppler, and Playwright with Chromium in place
+before anything else (`python3 -m research_control setup` retries by hand).
 `instructions.md` is the entry point when the user's message names the
 domains: `python3 -m research_control start --url URL`, one `--url` per domain,
 starts one company's run at once and, for several domains, has a worker decide

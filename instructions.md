@@ -25,6 +25,17 @@ every run saves itself (a `run-data/<slug>` branch), so the session needs push
 access to it. When there is no remote or no push access, say so once and
 continue; the run still works, and nothing is saved off this machine.
 
+The tools a run needs are installed by `start` itself before anything else:
+yt-dlp, ffmpeg, and faster-whisper for recordings, with the Whisper and
+speaker-label models downloaded ahead of time; poppler for PDFs; Node with
+Playwright and its Chromium for the headless browser and PDF printing. The
+result's `tools` entry says what was already present, what was installed, and
+what could not be (with the reason). A tool that could not be installed never
+stops the run: the capture method falls back and preflight warns. Retry by
+hand with `python3 -m research_control setup`, or install the named package
+the way the reason says; do not spend turns on a tool the environment cannot
+have.
+
 ## 2. Start from the domains in the message
 
 ```bash

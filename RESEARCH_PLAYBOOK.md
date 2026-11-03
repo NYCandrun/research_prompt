@@ -370,8 +370,10 @@ with page breaks marked.
 
 ## Tooling (tooling)
 
-**Try first:** Install a missing tool locally or in a project-local
-environment.
+**Try first:** `python3 -m research_control setup` from the template root; it
+installs the whole stack (yt-dlp, ffmpeg, faster-whisper and its models,
+sherpa-onnx, poppler, Playwright with Chromium) and reports what it could not.
+Then install the one tool it names, locally or in a project-local environment.
 
 **Then try:**
 

@@ -60,6 +60,11 @@ exact-artifact release passes.
 - Runtime-owned work (crawl, sitemap audit, capture and transcription,
   reducers, filing, digests) runs inside `run`; never hand it to an agent. Use `run --plan-only`
   while another `run` process is executing.
+- Tools install themselves: `start`, `new`, and `resume` put yt-dlp, ffmpeg,
+  faster-whisper and its models, poppler, and Playwright with Chromium in
+  place before anything else and report what could not be installed. Retry
+  with `python3 -m research_control setup`; a tool the environment cannot
+  have is a preflight warning and a fallback, never a reason to stop.
 - Scripted work (crawling, capture, transcription, history, reducers) sizes its
   own parallelism to the machine's cores and memory; raise or lower it with the
   README's overrides only when the environment shows strain or slack.

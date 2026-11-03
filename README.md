@@ -88,7 +88,7 @@ capture, extraction, verification, publication, archiving, and resume.
 | What | Count |
 |---|---:|
 | Python in the engine | 15,633 lines |
-| Automated tests | 157 |
+| Automated tests | 159 |
 | Task instructions (prompt files) | 37 |
 | Source channels | 14 |
 | Phases with checks between them | 11 |
@@ -118,6 +118,11 @@ question, the language is American English, the diagrams reference only
 verified facts. A failing check stops the run with the list of what failed; the
 control agent fixes the cause through commands, never by editing outputs by
 hand.
+
+**It sets itself up.** The first command installs what the run needs on the
+machine it is on: the transcription stack and its models, the PDF tools, and a
+headless browser. It records what was already there and what could not be
+installed, and falls back where a tool is missing.
 
 **Nothing is lost.** The run saves itself to a branch of the repository before
 every check and at the start of every phase: captures, transcripts, facts,
@@ -186,7 +191,8 @@ python3 -m research_control preflight
 python3 -m research_control start --url "DOMAIN" [--url "DOMAIN" ...]
 ```
 
-`start` is the entry point `instructions.md` walks through. With one domain
+`start` is the entry point `instructions.md` walks through. It first installs
+the tools a run needs (see Installing the tools below). With one domain
 it provisions and starts that company's run. With several it reads each
 homepage, writes a brief under `runs/_grouping/<id>/`, and prints one worker
 to start; the worker decides which domains belong to one company and writes
@@ -240,6 +246,32 @@ final artifact hashes. Inspect a run at any time with
 `run --plan-only` plans and writes packets without executing runtime work. Use
 it when another `run` process is already executing (for example a long capture
 with transcription), so two processes never run the same deterministic work.
+
+### Installing the tools
+
+`start`, `new`, and `resume` install what the runtime calls before anything
+else; `python3 -m research_control setup` does the same by hand (`--no-models`
+skips the model downloads, `--no-setup` on the three commands skips the step):
+
+- `yt-dlp`, `faster-whisper`, `numpy`, and `sherpa-onnx` through pip (plain,
+  then `--user`, then `--break-system-packages`), for captions, audio,
+  transcription, and speaker labels.
+- `ffmpeg`, `poppler-utils` (`pdftotext`, `pdftoppm`), and Node with npm
+  through apt-get on Debian and Ubuntu (as root or with passwordless sudo) or
+  Homebrew on macOS.
+- Playwright through npm into the template root (`node_modules/` is ignored by
+  git) when `require('playwright')` does not already resolve, and its Chromium
+  through `playwright install chromium`, for the headless browser and PDF
+  printing.
+- The Whisper model (`RESEARCH_CONTROL_WHISPER_MODEL`, default `small.en`) and
+  the speaker-label models, downloaded once into the local caches.
+
+Every step is recorded as present, installed, failed with the reason, or
+skipped, in `runs/_setup/setup-report.json`, copied into each run as
+`tools/outputs/setup-report.json` with a `tools` line in its history. Nothing
+here blocks a run: a tool that could not be installed shows up as a preflight
+warning, and the capture method it served falls back (a page without a
+browser, a recording without a transcript).
 
 ### Changing the framework while a run is in flight
 

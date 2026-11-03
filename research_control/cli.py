@@ -224,10 +224,15 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("preflight", help="verify the copied template and local runtime")
+    setup = subparsers.add_parser(
+        "setup", help="install the tools a run needs (transcription, headless browser, PDF tools) and download the models"
+    )
+    setup.add_argument("--no-models", action="store_true", help="skip downloading the Whisper and speaker-label models")
     start = subparsers.add_parser(
         "start", help="start from one or more domains: one company starts its run; several are grouped by company first"
     )
     start.add_argument("--url", action="append", default=[], metavar="URL", help="a domain or URL (repeatable)")
+    start.add_argument("--no-setup", action="store_true", help="do not install tools first")
     start.add_argument("--validate", metavar="ID", help="check a grouping worker's decision.json")
     start.add_argument("--apply", metavar="ID", help="start one run per company in a checked decision")
     new = subparsers.add_parser("new", help="provision an isolated run directory and initialize it")
@@ -237,12 +242,14 @@ def _parser() -> argparse.ArgumentParser:
         help="another domain the company itself publishes on (repeatable), for example its learning arm or a product brand",
     )
     new.add_argument("--dir", help="run directory (default: runs/<company-host-slug>)")
+    new.add_argument("--no-setup", action="store_true", help="do not install tools first")
     resume = subparsers.add_parser("resume", help="restore a run from its run-data branch on the remote and continue it here")
     resume.add_argument("--url", help="the company URL the run was started with (names the run-data branch)")
     resume.add_argument("--slug", help="the run's slug, when known")
     resume.add_argument("--branch", help="branch (default: run-data/<slug>)")
     resume.add_argument("--remote", help="remote URL (default: the template checkout's origin)")
     resume.add_argument("--dir", help="run directory (default: runs/<slug>)")
+    resume.add_argument("--no-setup", action="store_true", help="do not install tools first")
     subparsers.add_parser("sync-engine", help="refresh a run's engine, prompts, and policy from its template")
     init = subparsers.add_parser("init", help="initialize a URL-only research run")
     init.add_argument("--url", required=True)
@@ -540,8 +547,15 @@ def main() -> None:
     try:
         if args.command == "preflight":
             raise SystemExit(preflight(root))
+        if args.command == "setup":
+            from research_control.tooling import install_tools
+
+            report = install_tools(root, models=not args.no_models)
+            _print_json(report)
+            return
         if args.command == "start":
             from research_control.grouping import apply_decision, start_runs, validate_decision
+            from research_control.tooling import install_tools, summary
 
             if args.validate:
                 _print_json(validate_decision(root, args.validate))
@@ -551,28 +565,37 @@ def main() -> None:
                 return
             if not args.url:
                 parser.error("pass at least one --url")
-            _print_json(start_runs(root, args.url))
+            tools = None if args.no_setup else summary(install_tools(root))
+            _print_json({**start_runs(root, args.url), "tools": tools})
             return
         if args.command == "new":
+            from research_control.tooling import install_tools, record_setup, summary
+
+            tools = None if args.no_setup else summary(install_tools(root))
             run_root = Path(args.dir).resolve() if args.dir else root / RUNS_DIRECTORY / run_slug(args.url)
             provision_run(root, run_root)
             result = advance(run_root, args.url, also_urls=args.also)
+            record_setup(root, run_root)
             relative = os.path.relpath(run_root, Path.cwd())
             _print_json({
                 "run_root": str(run_root),
                 "next": f"cd {relative} && python3 -m research_control run",
                 "advance": result,
+                "tools": tools,
             })
             return
         if args.command == "resume":
             from research_control.resume import resume_run
+            from research_control.tooling import install_tools, record_setup, summary
 
+            tools = None if args.no_setup else summary(install_tools(root))
             result = resume_run(
                 root, slug=args.slug, url=args.url, branch=args.branch, remote=args.remote,
                 run_root=Path(args.dir).resolve() if args.dir else None,
             )
+            record_setup(root, Path(result["run_root"]))
             relative = os.path.relpath(result["run_root"], Path.cwd())
-            _print_json({**result, "next": f"cd {relative} && python3 -m research_control run"})
+            _print_json({**result, "next": f"cd {relative} && python3 -m research_control run", "tools": tools})
             return
         if args.command == "sync-engine":
             template = Path(__file__).resolve().parents[1]

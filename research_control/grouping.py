@@ -31,6 +31,7 @@ from research_control.discovery import (
 from research_control.io import atomic_write_json, atomic_write_text, load_json, utc_now
 from research_control.orchestration import validate_url
 from research_control.provision import RUNS_DIRECTORY, provision_run, run_slug
+from research_control.tooling import record_setup
 
 GROUPING_DIRECTORY = f"{RUNS_DIRECTORY}/_grouping"
 EVIDENCE_FILE = "evidence.json"
@@ -297,6 +298,7 @@ def _provision(template_root: Path, primary: str, also: list[str]) -> dict[str, 
         }
     provision_run(template_root, run_root)
     result = advance(run_root, primary, also_urls=also)
+    record_setup(template_root, run_root)
     return {
         "status": "started", "run_root": str(run_root), "company_url": primary, "also": also,
         "advance": result.get("status"), "next": f"cd {relative} && python3 -m research_control run",
