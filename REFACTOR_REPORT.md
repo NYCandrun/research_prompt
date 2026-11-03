@@ -50,30 +50,30 @@ malformed, crashed, stale, or under-counted checks become `UNKNOWN` and block.
 
 ## Preservation
 
-The conservative inventory contains **1,732 normative or contract-bearing
+The conservative inventory contains **1,752 normative or contract-bearing
 records**. The parser deliberately over-preserves list and table entries that
 inherit an imperative from their lead-in. This prevents terse field lists and
 unusual defensive details from disappearing during consolidation.
 
 | measure | count |
 |---|---:|
-| Atomic inventory rows | 1,732 |
-| Rows marked `preserved` | 1,732 |
+| Atomic inventory rows | 1,752 |
+| Rows marked `preserved` | 1,752 |
 | Rows without a destination | 0 |
-| README headings and subheadings | 202 |
-| Heading migration entries | 202 |
+| README headings and subheadings | 203 |
+| Heading migration entries | 203 |
 | Explicitly removed requirements | 0 |
-| Registered failure modes | 68 |
+| Registered failure modes | 70 |
 
 Inventory by assurance layer:
 
 | layer | requirements |
 |---|---:|
 | Data integrity | 17 |
-| Evidence validity | 488 |
+| Evidence validity | 503 |
 | Reasoning quality | 219 |
 | Publication integrity | 511 |
-| Execution integrity | 497 |
+| Execution integrity | 502 |
 
 Section 19 contributes 89 inventory rows, all classified under execution
 integrity. Its worker ledger, immutable assignments, attempts, dispositions,
@@ -83,12 +83,25 @@ and concise-output rules all have explicit destinations.
 
 `MIGRATION_MAP.md` maps every source heading and documents behavioral
 equivalence. `REQUIREMENT_INVENTORY.csv` preserves exact README source text and
-line location for each atomic record. The original README and historical prompt
-files were not edited.
+line location for each atomic record. The original refactor did not edit the
+README. One later change did, described below.
+
+### Research access change
+
+README sections 3, 4.10, 10, 10.2, 10.3, 10.12, and 18 replaced the "try once,
+log, and stop" access rules with the playbook loop. Workers start with the
+approach in `RESEARCH_PLAYBOOK.md` that has worked before, try its alternatives
+and their own ideas up to five distinct approaches, and use anything not on a
+fixed six-item off-limits list. Workarounds that succeed go to per-worker parts
+in `workarounds/`, which `tools/merge_workarounds.py` merges into
+`RESEARCH_WORKAROUNDS.md` for review. The constitution, runtime, capture, and
+extraction prompts, `WORKFLOW.yaml`, and the failure registry (F047, F069,
+F070) match. The inventory and migration map were regenerated from the edited
+README.
 
 ## Scar tissue
 
-`FAILURE_REGISTRY.md` contains 68 stable invariants. The converted failure
+`FAILURE_REGISTRY.md` contains 70 stable invariants. The converted failure
 classes are:
 
 - **F001-F006, worker completeness:** false success, missing assigned work,
@@ -122,6 +135,8 @@ classes are:
   irreproducible counts.
 - **F066-F068, provenance and exceptions:** research reports used as receipts,
   empty check output treated as clean, and silent exception-based weakening.
+- **F069-F070, research persistence:** stopping at the first failed approach,
+  and finding a working workaround without recording it.
 
 Executable regressions cover the source prompt's six fact faults: duplicate,
 conflict, wrong quote, wrong location, wrong date, and overstatement. They also
@@ -264,11 +279,11 @@ the current master prompt in production:
 
 ## Verification performed
 
-- 25 unit tests pass.
+- 29 unit tests pass.
 - All five categorized suites pass: data integrity, evidence pipeline,
   citation integrity, execution integrity, and release integrity.
-- The traceability audit passes with 1,732 inventory rows, 202 mapped headings,
-  and 68 unique failure IDs.
+- The traceability audit passes with 1,752 inventory rows, 203 mapped headings,
+  and 70 unique failure IDs.
 - `WORKFLOW.yaml` and all eight schemas parse as valid JSON.
 - The Python control package compiles without syntax errors.
 - Mechanical writing checks pass for the constitution and scoped prompts.

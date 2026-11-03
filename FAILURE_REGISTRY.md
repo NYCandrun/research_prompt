@@ -465,15 +465,15 @@ deterministic checker cannot establish meaning.
 - **Regression test:** Planned release-integrity fixture for unexpected page changes.
 - **Notes:** Some layout movement is allowed when explicitly reported and repaired.
 
-## F047 — Access restriction is bypassed
+## F047 — Off-limits access method is used
 
-- **Observed or anticipated failure:** A worker routes around robots, bot challenges, logins, or paywalls.
-- **What goes wrong:** Research violates the public-access boundary.
-- **Invariant:** Failed restricted access is logged, never bypassed.
+- **Observed or anticipated failure:** A worker logs in, pays, defeats a bot challenge, rotates IPs, submits a form with personal or made-up details, or fetches a live path that `robots.txt` disallows.
+- **What goes wrong:** Research leaves public access.
+- **Invariant:** Only the six methods on the off-limits list in README 4.10 and `RESEARCH_PLAYBOOK.md` are excluded. Every other approach is allowed.
 - **Current source:** README 3 and 4.10.
-- **Enforcement:** Capture prompt, blocked disposition, and coverage report.
+- **Enforcement:** Capture prompt, playbook off-limits list, workaround log, and blocked records that list what was tried.
 - **Regression test:** Semantic capture-policy fixture.
-- **Notes:** Network behavior cannot be reconstructed completely after the fact.
+- **Notes:** The list is fixed and concrete so workers never weigh an approach against an abstract standard.
 
 ## F048 — Repeated fetching worsens rate limits
 
@@ -684,3 +684,23 @@ deterministic checker cannot establish meaning.
 - **Enforcement:** Release schema and acceptance checker.
 - **Regression test:** `test_exception_requires_reason_and_evidence_path`.
 - **Notes:** Exceptions cannot override failed required controls.
+
+## F069 — Research stops at the first failed approach
+
+- **Observed or anticipated failure:** A worker marks a source or channel blocked after one method fails, such as one Wayback request or one caption client.
+- **What goes wrong:** Available evidence is lost and coverage looks thinner than it is.
+- **Invariant:** Workers start with the playbook's **Try first**, then work through **Then try** and their own ideas until something works or five distinct approaches fail. A blocked record lists every approach tried.
+- **Current source:** README 4.10, 10, and 10.2.
+- **Enforcement:** Runtime and capture prompts, `RESEARCH_PLAYBOOK.md`, and blocked parts.
+- **Regression test:** Semantic capture-policy fixture.
+- **Notes:** The same request repeated does not count as a distinct approach.
+
+## F070 — A working workaround is not recorded
+
+- **Observed or anticipated failure:** A worker finds a method that works but returns only the captured item.
+- **What goes wrong:** The next run repeats the same failures and the playbook never improves.
+- **Invariant:** Every success that is not the playbook's **Try first** gets a workaround entry with the failure, each approach tried, and exactly what worked. `RESEARCH_WORKAROUNDS.md` is rebuilt before the capture gate.
+- **Current source:** README 4.10 and 10.12.
+- **Enforcement:** Workaround parts, `tools/merge_workarounds.py`, and the capture gate's required path.
+- **Regression test:** `test_entries_grouped_by_channel_and_malformed_kept`.
+- **Notes:** The user reviews the log and promotes entries into the playbook.

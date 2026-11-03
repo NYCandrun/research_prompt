@@ -15,7 +15,17 @@ reliably identified speakers/titles, title source, duration, method, known
 caption errors, and timestamps around every 30 to 60 seconds. Preserve
 one-word rolling-caption lines.
 
-Write only the assigned manifest part, blocked part, evidence paths, and
-scratch directory. Never append to the canonical manifest. Respect access and
-host pacing. Do not bypass restrictions. Return counts and paths only after the
-local capture validator passes.
+Find each source as best you can. Use your channel's section of
+`RESEARCH_PLAYBOOK.md`: **Try first**, then **Then try**, then anything else
+you can think of, up to five distinct approaches per problem. Anything not on
+the off-limits list is allowed. An item is `blocked` only after five
+approaches fail, and its blocked record lists each approach and its result.
+
+When anything other than **Try first** works, add an entry to your workaround
+part with the failure, every approach tried, and exactly what worked. One entry
+covers every item the same fix solved.
+
+Write only the assigned manifest part, blocked part, workaround part, evidence
+paths, and scratch directory. Never append to the canonical manifest. Return
+counts, workaround entry count, and paths only after the local capture
+validator passes.

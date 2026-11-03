@@ -82,6 +82,7 @@
       "inputs": [
         {"id": "effective_prompt", "path": "README.md", "required": true},
         {"id": "user_inputs", "path": "00-inputs", "required": false},
+        {"id": "research_playbook", "path": "RESEARCH_PLAYBOOK.md", "required": false, "create_if_absent": true},
         {"id": "company_url", "kind": "runtime_value", "required": true}
       ],
       "outputs": [
@@ -134,12 +135,14 @@
       "allowed_preparatory_work": ["verification tooling", "merge tooling", "competitor capture", "design template", "rendering tools", "phase briefs"],
       "inputs": [
         {"id": "scope_map", "path": "00-scope.md", "required": true},
+        {"id": "research_playbook", "path": "RESEARCH_PLAYBOOK.md", "required": true},
         {"id": "capture_assignments", "kind": "ledger_assignments", "task_types": ["capture"], "required": true}
       ],
       "outputs": [
         {"id": "source_manifest", "path": "01-sources/MANIFEST.csv"},
         {"id": "publish_dates", "path": "01-sources/publish-dates.csv"},
         {"id": "blocked_log", "path": "01-sources/BLOCKED.md"},
+        {"id": "workaround_log", "path": "RESEARCH_WORKAROUNDS.md"},
         {"id": "coverage", "path": "06-checks/coverage.md"}
       ],
       "reconciliations": [
@@ -162,7 +165,7 @@
       "retry_policy": "global",
       "gate": {
         "name": "capture",
-        "required_paths": ["01-sources/MANIFEST.csv", "01-sources/publish-dates.csv", "01-sources/BLOCKED.md", "06-checks/coverage.md"],
+        "required_paths": ["01-sources/MANIFEST.csv", "01-sources/publish-dates.csv", "01-sources/BLOCKED.md", "RESEARCH_WORKAROUNDS.md", "06-checks/coverage.md"],
         "required_reconciliations": ["capture_sources", "capture_assignments"],
         "required_validators": ["source_records", "source_dates", "manifest_files", "capture_workers"],
         "required_semantic_reviews": ["coverage_review"],
@@ -177,12 +180,14 @@
       "inputs": [
         {"id": "source_manifest", "path": "01-sources/MANIFEST.csv", "required": true},
         {"id": "extraction_scope", "path": "tools/lists/extraction-scope.csv", "required": true},
+        {"id": "research_playbook", "path": "RESEARCH_PLAYBOOK.md", "required": true},
         {"id": "extraction_assignments", "kind": "ledger_assignments", "task_types": ["extraction", "filing"], "required": true}
       ],
       "outputs": [
         {"id": "fact_store", "path": "02-facts/*.md"},
         {"id": "competitor_fact_store", "path": "04-competitors/*/02-facts/*.md"},
-        {"id": "script_audits", "path": "06-checks/script-audits.md"}
+        {"id": "script_audits", "path": "06-checks/script-audits.md"},
+        {"id": "workaround_log", "path": "RESEARCH_WORKAROUNDS.md"}
       ],
       "reconciliations": [
         {"id": "source_extraction", "report": "tools/outputs/reconciliation/source-extraction.json"},
